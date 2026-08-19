@@ -234,23 +234,6 @@ input:focus,select:focus{border-color:#18b979;box-shadow:0 0 0 4px rgba(24,185,1
   </main>
 </div>
 
-
-<!-- LINKO_SOUND_PHASE4_20260819 -->
-<script id="linkoDriverSoundEngine">
-(function(){
-  'use strict';
-  if(window.__linkoDriverSoundEngine)return;window.__linkoDriverSoundEngine=true;
-  let ctx=null;
-  function context(){if(ctx)return ctx;const C=window.AudioContext||window.webkitAudioContext;if(!C)return null;try{ctx=new C();return ctx}catch(e){return null}}
-  function unlock(){const c=context();if(!c)return;try{if(c.state==='suspended')c.resume().catch(function(){});const o=c.createOscillator(),g=c.createGain();g.gain.value=0.00001;o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+.015)}catch(e){}}
-  ['pointerdown','touchstart','click','keydown'].forEach(function(t){document.addEventListener(t,unlock,{capture:true,once:true,passive:t!=='keydown'})});
-  function tone(f,s,d,v,w){const c=context();if(!c)return;try{const t=c.currentTime+s,o=c.createOscillator(),g=c.createGain();o.type=w||'sine';o.frequency.value=f;g.gain.setValueAtTime(.0001,t);g.gain.exponentialRampToValueAtTime(v,t+.018);g.gain.exponentialRampToValueAtTime(.0001,t+d);o.connect(g);g.connect(c.destination);o.start(t);o.stop(t+d+.025)}catch(e){}}
-  function chord(f,s,d,v){tone(f,s,d,v,'sine');tone(f*2,s,d,v*.18,'triangle')}
-  function play(type){const c=context();if(!c)return;try{if(c.state==='suspended')c.resume().catch(function(){})}catch(e){}if(type==='newOrder'){chord(783.99,0,.18,.19);chord(1046.5,.13,.20,.20);chord(1318.51,.28,.26,.21);chord(1046.5,.52,.30,.16)}else if(type==='success'){chord(659.25,0,.13,.11);chord(830.61,.095,.14,.12);chord(1046.5,.19,.20,.14)}else{chord(880,0,.20,.16);chord(1174.66,.17,.25,.18)}}
-  window.__linkoDriverSound={play:play,unlock:unlock};
-})();
-</script>
-
 <script type="module">
 const FIREBASE_CONFIG={
   apiKey:"AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA",
@@ -271,8 +254,6 @@ const $=s=>document.querySelector(s);
 const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
 const clean=v=>String(v??"").trim();
 let f=null,driver=null,orders=[],ordersUnsub=null,driverUnsub=null,busy=false;
-let soundOrdersReady=false,soundAvailableIds=new Set();
-const sound=t=>{try{window.__linkoDriverSound&&window.__linkoDriverSound.play(t)}catch(e){}};
 
 function toast(msg){
   const t=$("#toast");t.textContent=msg;t.classList.add("show");
@@ -378,7 +359,6 @@ $("#registerForm").addEventListener("submit",async e=>{
     });
     $("#registerForm").reset();
     setAuthNotice("wait","تم إرسال طلبك بنجاح. الطلب الآن قيد انتظار موافقة الإدارة.");
-    sound("success");
   }catch(err){
     console.error(err);
     setAuthNotice("bad",String(err&&err.code||"").includes("permission-denied")
@@ -435,7 +415,7 @@ async function enterApp(d){
 function leave(){
   if(ordersUnsub){ordersUnsub();ordersUnsub=null}
   if(driverUnsub){driverUnsub();driverUnsub=null}
-  driver=null;orders=[];soundOrdersReady=false;soundAvailableIds=new Set();
+  driver=null;orders=[];
   localStorage.removeItem(SESSION_KEY);
   $("#app").classList.remove("show");
   $("#authScreen").classList.remove("hidden");
@@ -537,11 +517,6 @@ async function startListeners(){
     snap=>{
       orders=snap.docs.map(d=>({id:d.id,...d.data()}));
       orders.sort((a,b)=>Number(b.clientCreatedAtMs||0)-Number(a.clientCreatedAtMs||0));
-      const nextAvailableIds=new Set(orders.filter(available).map(o=>String(o.id)));
-      if(soundOrdersReady){
-        for(const id of nextAvailableIds){if(!soundAvailableIds.has(id)){sound("newOrder");break}}
-      }
-      soundAvailableIds=nextAvailableIds;soundOrdersReady=true;
       render();
     },
     err=>{console.error(err);toast("تعذر قراءة الطلبات من Firebase")}
@@ -578,7 +553,6 @@ async function acceptOrder(id){
       });
     });
     toast("تم قبول الطلب وتثبيته باسمك");
-    sound("success");
     if(acceptedOrder){
       pushMemberNotification(
         acceptedOrder,
@@ -610,7 +584,6 @@ async function setOrderStatus(id,status){
       tx.update(ref,payload);
     });
     toast(status==="delivered"?"تم تسجيل تسليم الطلب":"تم تحديث الحالة");
-    sound("success");
     if(statusOrder){
       if(status==="picked_up"){
         pushMemberNotification(
