@@ -19092,3 +19092,188 @@ body.linko-dark .linko-rating-card textarea{background:#111827;color:#fff;border
   setTimeout(function(){extendProductAPI();injectAdminPriceEditor()},1400);
 })();
 </script>
+
+
+<!-- LINKO_SOUND_PHASE4_20260819 -->
+<script id="linkoSoundPhase4Runtime">
+(function(){
+  'use strict';
+  if(window.__linkoSoundPhase4Runtime)return;
+  window.__linkoSoundPhase4Runtime=true;
+
+  let ctx=null, unlocked=false;
+  const onceMap=new Map();
+
+  function context(){
+    if(ctx)return ctx;
+    const C=window.AudioContext||window.webkitAudioContext;
+    if(!C)return null;
+    try{ctx=new C();}catch(e){return null;}
+    return ctx;
+  }
+  function unlock(){
+    const c=context();if(!c)return;
+    try{
+      const done=function(){unlocked=true;};
+      if(c.state==='suspended'){
+        const p=c.resume();if(p&&typeof p.then==='function')p.then(done).catch(function(){});else done();
+      }else done();
+      const o=c.createOscillator(),g=c.createGain();
+      g.gain.setValueAtTime(0.00001,c.currentTime);o.connect(g);g.connect(c.destination);o.start();o.stop(c.currentTime+0.015);
+    }catch(e){}
+  }
+  ['pointerdown','touchstart','click','keydown'].forEach(function(type){
+    document.addEventListener(type,unlock,{capture:true,once:true,passive:type!=='keydown'});
+  });
+
+  function tone(freq,start,duration,volume,wave){
+    const c=context();if(!c)return;
+    try{
+      const t=c.currentTime+start,o=c.createOscillator(),g=c.createGain();
+      o.type=wave||'sine';o.frequency.setValueAtTime(freq,t);
+      g.gain.setValueAtTime(0.0001,t);
+      g.gain.exponentialRampToValueAtTime(Math.max(0.001,volume),t+0.018);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+duration);
+      o.connect(g);g.connect(c.destination);o.start(t);o.stop(t+duration+0.025);
+    }catch(e){}
+  }
+  function chord(freq,start,duration,volume){
+    tone(freq,start,duration,volume,'sine');
+    tone(freq*2,start,duration,volume*0.18,'triangle');
+  }
+  function play(type){
+    const c=context();if(!c)return false;
+    try{if(c.state==='suspended')c.resume().catch(function(){});}catch(e){}
+    if(type==='newOrder'){
+      chord(783.99,0.00,0.18,0.19);
+      chord(1046.50,0.13,0.20,0.20);
+      chord(1318.51,0.28,0.26,0.21);
+      chord(1046.50,0.52,0.30,0.16);
+    }else if(type==='notification'){
+      chord(880.00,0.00,0.20,0.16);
+      chord(1174.66,0.17,0.25,0.18);
+    }else if(type==='success'){
+      chord(659.25,0.00,0.13,0.11);
+      chord(830.61,0.095,0.14,0.12);
+      chord(1046.50,0.19,0.20,0.14);
+    }else if(type==='error'){
+      chord(392.00,0.00,0.18,0.10);
+      chord(293.66,0.14,0.24,0.11);
+    }
+    return true;
+  }
+  function playOnce(type,token,ttl){
+    const now=Date.now(),key=String(type)+'|'+String(token||'');
+    const prev=onceMap.get(key)||0;
+    if(now-prev<(ttl||1200))return false;
+    onceMap.set(key,now);
+    if(onceMap.size>80){
+      onceMap.forEach(function(v,k){if(now-v>10000)onceMap.delete(k);});
+    }
+    return play(type);
+  }
+  window.__linkoSound={play:play,playOnce:playOnce,unlock:unlock,isUnlocked:function(){return unlocked}};
+
+  function isImportantSuccess(text){
+    text=String(text||'');
+    return /تم تثبيت موقع التسليم|تم إرسال الطلب بنجاح|تم إرسال طلب الاشتراك|تم حفظ تقييمك|تم حفظ سعر|تم حفظ اسم|تم حفظ بيانات|تم حفظ التعديل|تم تحديث السعر|تمت الموافقة|تم تفعيل|تم إيقاف|تم رفض طلب المندوب|تم إرسال الإشعار/.test(text);
+  }
+  function wrapMainToast(){
+    const old=window.toast;
+    if(typeof old!=='function'||old.__linkoSoundWrapped)return;
+    const wrapped=function(text){
+      const r=old.apply(this,arguments);
+      try{if(isImportantSuccess(text))playOnce('success','main-toast:'+String(text),700);}catch(e){}
+      return r;
+    };
+    wrapped.__linkoSoundWrapped=true;
+    window.toast=wrapped;
+  }
+
+  // Real member notification sound: listen only to popup visibility, no Firestore extra reads.
+  const popupIds=['linkoStage74MemberNotificationPopup','linkoFinalNotificationPopup','linkoUrgentMemberNotificationPopup'];
+  function bindPopup(p){
+    if(!p||p.__linkoSoundPopupBound)return;
+    p.__linkoSoundPopupBound=true;
+    let currentToken='';
+    const check=function(){
+      const shown=p.classList.contains('show') && !p.hidden && p.getAttribute('aria-hidden')!=='true';
+      if(!shown){currentToken='';return;}
+      const token=String(p.textContent||'').trim();
+      if(token&&token!==currentToken){
+        currentToken=token;
+        playOnce('notification',token,1300);
+      }
+    };
+    const ob=new MutationObserver(check);
+    ob.observe(p,{attributes:true,attributeFilter:['class','hidden','aria-hidden'],childList:true,subtree:true,characterData:true});
+    check();
+  }
+  function scanPopups(){popupIds.forEach(function(id){bindPopup(document.getElementById(id));});}
+  scanPopups();
+  const popupFinder=new MutationObserver(function(muts){
+    for(const m of muts){if(m.addedNodes&&m.addedNodes.length){scanPopups();break;}}
+  });
+  if(document.body)popupFinder.observe(document.body,{childList:true,subtree:true});
+
+  // Admin iframe: success sounds + a clear chime only when a NEW order arrives.
+  function adminInjectedCode(){
+    return '('+function(){
+      if(window.__linkoAdminSoundPhase4)return;
+      window.__linkoAdminSoundPhase4=true;
+      const CFG={apiKey:'AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA',authDomain:'medina-bazaar-e2c18.firebaseapp.com',projectId:'medina-bazaar-e2c18',storageBucket:'medina-bazaar-e2c18.firebasestorage.app',messagingSenderId:'375693456199',appId:'1:375693456199:web:2b36e0368ed898a7a11262'};
+      let unsub=null,lastOrderId='',watchReady=false,watchStarting=false;
+      function sound(type,token){try{parent.__linkoSound&&parent.__linkoSound.playOnce(type,token||type,900)}catch(e){}}
+      function successText(t){return /تم حفظ|تم تحديث|تمت الموافقة|تم قبول|تم رفض|تم تفعيل|تم إيقاف|تم جعل|تم إرسال الإشعار|تم خصم/.test(String(t||''));}
+      function wrapToast(){
+        const old=window.toast;
+        if(typeof old!=='function'||old.__linkoAdminSoundWrapped)return;
+        const wrapped=function(t){const r=old.apply(this,arguments);try{if(successText(t))sound('success','admin:'+String(t))}catch(e){}return r;};
+        wrapped.__linkoAdminSoundWrapped=true;window.toast=wrapped;
+      }
+      async function startWatch(){
+        if(watchStarting||unsub)return;watchStarting=true;
+        try{
+          const appMod=await import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js');
+          const fs=await import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js');
+          const app=appMod.getApps().length?appMod.getApps()[0]:appMod.initializeApp(CFG);
+          const db=fs.getFirestore(app);
+          const q=fs.query(fs.collection(db,'orders'),fs.orderBy('createdAt','desc'),fs.limit(1));
+          unsub=fs.onSnapshot(q,function(snap){
+            const id=snap.empty?'':snap.docs[0].id;
+            if(!watchReady){lastOrderId=id;watchReady=true;return;}
+            if(id&&id!==lastOrderId){lastOrderId=id;sound('newOrder','new-order:'+id);}
+          },function(err){console.warn('LINKO admin order sound watcher paused',err);try{if(unsub)unsub()}catch(e){}unsub=null;watchReady=false;});
+        }catch(e){console.warn('LINKO admin order sound init skipped',e);}finally{watchStarting=false;}
+      }
+      function wrapLogin(){
+        const old=window.loginAdmin;
+        if(typeof old!=='function'||old.__linkoAdminSoundWrapped)return;
+        const wrapped=async function(){const r=await old.apply(this,arguments);setTimeout(function(){wrapToast();startWatch();},250);return r;};
+        wrapped.__linkoAdminSoundWrapped=true;window.loginAdmin=wrapped;
+      }
+      wrapToast();wrapLogin();
+      setTimeout(wrapToast,400);setTimeout(wrapToast,1300);setTimeout(wrapLogin,400);
+      setTimeout(startWatch,700);
+    }.toString()+')();';
+  }
+  function injectAdminSound(){
+    const fr=document.getElementById('linkoAdminFrame');
+    if(!fr||!fr.contentDocument||!fr.contentDocument.body)return false;
+    try{
+      const w=fr.contentWindow,d=fr.contentDocument;
+      if(w.__linkoAdminSoundPhase4)return true;
+      const sc=d.createElement('script');sc.id='linko-admin-sound-phase4';sc.textContent=adminInjectedCode();d.body.appendChild(sc);return true;
+    }catch(e){return false;}
+  }
+  function bindAdmin(){
+    const fr=document.getElementById('linkoAdminFrame');
+    if(fr&&!fr.__linkoSoundLoadBound){fr.__linkoSoundLoadBound=true;fr.addEventListener('load',function(){setTimeout(injectAdminSound,100);setTimeout(injectAdminSound,600);});}
+    setTimeout(injectAdminSound,80);setTimeout(injectAdminSound,500);setTimeout(injectAdminSound,1500);
+  }
+
+  function boot(){wrapMainToast();scanPopups();bindAdmin();}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
+  setTimeout(wrapMainToast,300);setTimeout(wrapMainToast,1200);
+})();
+</script>
