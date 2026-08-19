@@ -2,6 +2,7 @@
 <!-- MEDINA_BUILD_V71_STARTUP_GUARD_20260804 -->
 <!-- LINKO_DELIVERY_LOCATION_PHASE1_FIX_LAZY_MAP_20260819 -->
 <!-- LINKO_DELIVERY_LOCATION_REAL_FIX_20260819 -->
+<!-- LINKO_DRIVER_PHASE2_20260819 -->
 <!-- LINKO SUBSCRIPTION REQUESTS FINAL V48: REAPPLY ON EVERY ADMIN OPEN/FRAME LOAD -->
 <html lang="ar" dir="rtl"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" /><title>سوق المدينة الكبير | واجهة الأعضاء</title><style id="linkoNoStartupBlackScreenFinal">
 html{color-scheme:light!important;background:#dcefe5!important;}
@@ -13106,6 +13107,411 @@ document.addEventListener('DOMContentLoaded',function(){
 
   setTimeout(install,300);
   setTimeout(install,1000);
+})();
+</script>
+
+
+<script id="linkoDriverPhase2AdminPatch">
+(function(){
+  'use strict';
+  if(window.__linkoDriverPhase2AdminPatch)return;
+  window.__linkoDriverPhase2AdminPatch=true;
+
+  const FIREBASE_CONFIG={
+    apiKey:"AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA",
+    authDomain:"medina-bazaar-e2c18.firebaseapp.com",
+    projectId:"medina-bazaar-e2c18",
+    storageBucket:"medina-bazaar-e2c18.firebasestorage.app",
+    messagingSenderId:"375693456199",
+    appId:"1:375693456199:web:2b36e0368ed898a7a11262"
+  };
+
+  function adminCode(){
+    return `
+(function(){
+  'use strict';
+  if(window.__linkoDriverAdminInside)return;
+  window.__linkoDriverAdminInside=true;
+
+  const CFG=${JSON.stringify(FIREBASE_CONFIG)};
+  const REQUESTS='driverRequests';
+  const DRIVERS='drivers';
+  let fbPromise=null,reqRows=[],driverRows=[],reqUnsub=null,driverUnsub=null;
+  const busy=new Set();
+
+  function esc(v){
+    return String(v==null?'':v).replace(/[&<>"']/g,function(m){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];
+    });
+  }
+  function clean(v){return String(v==null?'':v).trim();}
+  function msg(v){try{if(typeof toast==='function')toast(v);else console.log(v)}catch(e){}}
+  function ts(v){
+    try{
+      if(v&&typeof v.toDate==='function')return v.toDate().toLocaleString('ar-IQ');
+      if(v&&typeof v.seconds==='number')return new Date(v.seconds*1000).toLocaleString('ar-IQ');
+    }catch(e){}
+    return clean(v)||'-';
+  }
+  function statusText(v){
+    v=clean(v).toLowerCase();
+    return v==='pending'?'قيد الانتظار':
+      v==='approved'||v==='active'?'مفعل':
+      v==='rejected'?'مرفوض':
+      v==='stopped'?'موقوف':v||'-';
+  }
+  function statusClass(v){
+    v=clean(v).toLowerCase();
+    if(v==='approved'||v==='active')return 'ok';
+    if(v==='pending')return 'wait';
+    return 'bad';
+  }
+  async function fb(){
+    if(fbPromise)return fbPromise;
+    fbPromise=Promise.all([
+      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),
+      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')
+    ]).then(function(mods){
+      const appMod=mods[0],fs=mods[1];
+      const app=appMod.getApps().length?appMod.getApps()[0]:appMod.initializeApp(CFG);
+      return {db:fs.getFirestore(app),fs:fs};
+    });
+    return fbPromise;
+  }
+
+  function ensureStyle(){
+    if(document.getElementById('linko-driver-admin-style'))return;
+    const st=document.createElement('style');
+    st.id='linko-driver-admin-style';
+    st.textContent=\`
+      .driver-admin-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+      .driver-admin-card{background:#fff;border:1px solid var(--line);border-radius:22px;padding:13px;box-shadow:var(--soft);display:grid;gap:9px}
+      .driver-admin-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+      .driver-admin-head h3{font-size:16px;font-weight:900}
+      .driver-admin-meta{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+      .driver-admin-pill{padding:8px;border-radius:14px;background:#f8fafc;border:1px solid var(--line);font-size:12px;font-weight:900}
+      .driver-admin-pill small{display:block;color:var(--muted);font-size:10px;margin-bottom:2px}
+      .driver-admin-section-title{margin:16px 0 9px;font-size:18px;font-weight:900}
+      body.theme-dark .driver-admin-card{background:#111827;border-color:#334155}
+      body.theme-dark .driver-admin-pill{background:#0f172a;border-color:#334155;color:#fff}
+      @media(max-width:720px){.driver-admin-grid{grid-template-columns:1fr}.driver-admin-meta{grid-template-columns:1fr 1fr}}
+    \`;
+    document.head.appendChild(st);
+  }
+
+  function pendingCount(){
+    return reqRows.filter(function(x){return clean(x.status).toLowerCase()==='pending'}).length;
+  }
+
+  function renderDriversPage(){
+    const pending=reqRows.filter(function(x){return clean(x.status).toLowerCase()==='pending'});
+    const processed=reqRows.filter(function(x){return clean(x.status).toLowerCase()!=='pending'}).slice(0,20);
+    const activeDrivers=driverRows.filter(function(x){return x.deleted!==true});
+
+    function reqCard(r){
+      return '<article class="driver-admin-card">'
+        +'<div class="driver-admin-head"><h3>'+esc(r.name||'مندوب')+'</h3>'
+        +'<span class="status '+statusClass(r.status)+'">'+esc(statusText(r.status))+'</span></div>'
+        +'<div class="driver-admin-meta">'
+        +'<div class="driver-admin-pill"><small>الهاتف</small>'+esc(r.phoneDisplay||r.phone||'-')+'</div>'
+        +'<div class="driver-admin-pill"><small>المنطقة</small>'+esc(r.area||'-')+'</div>'
+        +'<div class="driver-admin-pill"><small>المركبة</small>'+esc(r.vehicleType||'-')+'</div>'
+        +'<div class="driver-admin-pill"><small>رقم المركبة</small>'+esc(r.vehicleNumber||'-')+'</div>'
+        +'</div>'
+        +'<small class="muted">'+esc(ts(r.createdAt)||r.createdAtText||'-')+'</small>'
+        +(clean(r.status).toLowerCase()==='pending'
+          ?'<div class="actions-row">'
+            +'<button class="btn mini" data-driver-admin-action="approve" data-id="'+esc(r.id)+'">موافقة</button>'
+            +'<button class="btn warn mini" data-driver-admin-action="reject" data-id="'+esc(r.id)+'">رفض</button>'
+            +'</div>'
+          :'')
+        +'</article>';
+    }
+
+    function driverCard(d){
+      const active=clean(d.status).toLowerCase()==='active';
+      return '<article class="driver-admin-card">'
+        +'<div class="driver-admin-head"><h3>'+esc(d.name||'مندوب')+'</h3>'
+        +'<span class="status '+(active?'ok':'bad')+'">'+esc(active?'مفعل':'موقوف')+'</span></div>'
+        +'<div class="driver-admin-meta">'
+        +'<div class="driver-admin-pill"><small>الهاتف</small>'+esc(d.phoneDisplay||d.phone||'-')+'</div>'
+        +'<div class="driver-admin-pill"><small>المنطقة</small>'+esc(d.area||'-')+'</div>'
+        +'<div class="driver-admin-pill"><small>المركبة</small>'+esc(d.vehicleType||'-')+'</div>'
+        +'<div class="driver-admin-pill"><small>رقم المركبة</small>'+esc(d.vehicleNumber||'-')+'</div>'
+        +'</div>'
+        +'<div class="actions-row">'
+        +'<button class="btn '+(active?'warn':'')+' mini" data-driver-admin-action="toggle" data-id="'+esc(d.id)+'" data-next="'+(active?'stopped':'active')+'">'+(active?'إيقاف المندوب':'تفعيل المندوب')+'</button>'
+        +'</div>'
+        +'</article>';
+    }
+
+    return '<div class="kpis">'
+      +'<div class="kpi" data-icon="person_add"><small>طلبات بانتظار الموافقة</small><b>'+pending.length+'</b></div>'
+      +'<div class="kpi" data-icon="delivery_dining"><small>المندوبون المفعلون</small><b>'+activeDrivers.filter(function(x){return clean(x.status).toLowerCase()==='active'}).length+'</b></div>'
+      +'<div class="kpi" data-icon="person_off"><small>المندوبون الموقوفون</small><b>'+activeDrivers.filter(function(x){return clean(x.status).toLowerCase()==='stopped'}).length+'</b></div>'
+      +'</div>'
+      +'<div class="panel"><div class="panel-head"><div><h2>طلبات تسجيل المندوبين</h2><p>الموافقة تنشئ حساب مندوب مفعل بنفس بيانات الطلب.</p></div><button class="btn secondary mini" data-driver-admin-action="refresh">تحديث</button></div>'
+      +'<div class="driver-admin-grid">'+(pending.map(reqCard).join('')||'<div class="empty">لا توجد طلبات مندوبين بانتظار الموافقة</div>')+'</div>'
+      +(processed.length?'<h3 class="driver-admin-section-title">آخر الطلبات المعالجة</h3><div class="driver-admin-grid">'+processed.map(reqCard).join('')+'</div>':'')
+      +'</div>'
+      +'<div class="panel"><div class="panel-head"><div><h2>إدارة المندوبين</h2><p>تفعيل أو إيقاف حساب المندوب بدون حذف سجل الطلبات.</p></div></div>'
+      +'<div class="driver-admin-grid">'+(activeDrivers.map(driverCard).join('')||'<div class="empty">لا يوجد مندوبون مفعلون بعد</div>')+'</div></div>';
+  }
+
+  function appendNav(){
+    const nav=document.getElementById('nav');
+    if(!nav)return;
+    let btn=document.getElementById('linkoDriverAdminNav');
+    if(!btn){
+      btn=document.createElement('button');
+      btn.id='linkoDriverAdminNav';
+      btn.type='button';
+      btn.innerHTML='<span class="ico"><span class="material-symbols-rounded">delivery_dining</span></span><span>المندوبين</span><span id="linkoDriverReqBadge" class="status bad" style="display:none"></span>';
+      btn.addEventListener('click',function(){
+        try{active='drivers';}catch(e){}
+        const title=document.getElementById('pageTitle'),desc=document.getElementById('pageDesc'),side=document.getElementById('sidebar');
+        if(title)title.textContent='المندوبين';
+        if(desc)desc.textContent='طلبات التسجيل، التفعيل وإدارة حسابات مندوبي التوصيل.';
+        if(side)side.classList.remove('open');
+        renderDriverSection();
+      });
+      nav.appendChild(btn);
+    }
+    document.querySelectorAll('#nav button').forEach(function(x){x.classList.toggle('active',x===btn&&typeof active!=='undefined'&&active==='drivers')});
+    const badge=document.getElementById('linkoDriverReqBadge');
+    if(badge){
+      const n=pendingCount();
+      badge.textContent=n;
+      badge.style.display=n?'inline-flex':'none';
+    }
+  }
+
+  function renderDriverSection(){
+    ensureStyle();
+    appendNav();
+    const main=document.getElementById('main');
+    if(main)main.innerHTML=renderDriversPage();
+  }
+  window.linkoRenderDriverAdmin=renderDriverSection;
+
+  const originalBuild=typeof buildNav==='function'?buildNav:null;
+  if(originalBuild){
+    window.buildNav=function(){
+      const r=originalBuild.apply(this,arguments);
+      appendNav();
+      return r;
+    };
+  }
+
+  const originalRender=typeof render==='function'?render:null;
+  if(originalRender){
+    window.render=function(){
+      if(typeof active!=='undefined'&&active==='drivers'){
+        renderDriverSection();
+        return;
+      }
+      const r=originalRender.apply(this,arguments);
+      appendNav();
+      return r;
+    };
+  }
+
+  async function approve(id){
+    if(busy.has(id))return;
+    busy.add(id);
+    try{
+      const r=reqRows.find(function(x){return String(x.id)===String(id)});
+      if(!r)throw new Error('REQUEST_NOT_FOUND');
+      const f=await fb();
+      const batch=f.fs.writeBatch(f.db);
+      const driverRef=f.fs.doc(f.db,DRIVERS,String(id));
+      const requestRef=f.fs.doc(f.db,REQUESTS,String(id));
+      batch.set(driverRef,{
+        driverId:String(id),
+        name:clean(r.name),
+        phone:clean(r.phone),
+        phoneDisplay:clean(r.phoneDisplay||r.phone),
+        area:clean(r.area),
+        vehicleType:clean(r.vehicleType),
+        vehicleNumber:clean(r.vehicleNumber),
+        codeHash:clean(r.codeHash),
+        status:'active',
+        createdAt:r.createdAt||f.fs.serverTimestamp(),
+        approvedAt:f.fs.serverTimestamp(),
+        updatedAt:f.fs.serverTimestamp(),
+        deleted:false
+      },{merge:true});
+      batch.set(requestRef,{status:'approved',approvedAt:f.fs.serverTimestamp(),updatedAt:f.fs.serverTimestamp()},{merge:true});
+      await batch.commit();
+      msg('تمت الموافقة وتفعيل حساب المندوب');
+    }catch(e){console.error(e);msg('تعذر الموافقة على المندوب');}
+    finally{busy.delete(id);}
+  }
+
+  async function reject(id){
+    if(busy.has(id))return;
+    busy.add(id);
+    try{
+      const f=await fb();
+      await f.fs.setDoc(f.fs.doc(f.db,REQUESTS,String(id)),{
+        status:'rejected',rejectedAt:f.fs.serverTimestamp(),updatedAt:f.fs.serverTimestamp()
+      },{merge:true});
+      msg('تم رفض طلب المندوب');
+    }catch(e){console.error(e);msg('تعذر رفض الطلب');}
+    finally{busy.delete(id);}
+  }
+
+  async function toggleDriver(id,next){
+    if(busy.has(id))return;
+    busy.add(id);
+    try{
+      const f=await fb();
+      await f.fs.setDoc(f.fs.doc(f.db,DRIVERS,String(id)),{
+        status:next,updatedAt:f.fs.serverTimestamp()
+      },{merge:true});
+      msg(next==='active'?'تم تفعيل المندوب':'تم إيقاف المندوب');
+    }catch(e){console.error(e);msg('تعذر تحديث حالة المندوب');}
+    finally{busy.delete(id);}
+  }
+
+  document.addEventListener('click',function(e){
+    const btn=e.target.closest('[data-driver-admin-action]');
+    if(!btn)return;
+    e.preventDefault();e.stopPropagation();
+    const action=btn.getAttribute('data-driver-admin-action'),id=btn.getAttribute('data-id');
+    if(action==='approve')approve(id);
+    else if(action==='reject')reject(id);
+    else if(action==='toggle')toggleDriver(id,btn.getAttribute('data-next')||'stopped');
+    else if(action==='refresh'){start(true);msg('تم تحديث بيانات المندوبين');}
+  },true);
+
+  function norm(doc){return Object.assign({id:doc.id},doc.data()||{})}
+  async function start(force){
+    try{
+      const f=await fb();
+      if(force){
+        if(reqUnsub){reqUnsub();reqUnsub=null}
+        if(driverUnsub){driverUnsub();driverUnsub=null}
+      }
+      if(!reqUnsub){
+        reqUnsub=f.fs.onSnapshot(f.fs.collection(f.db,REQUESTS),function(snap){
+          reqRows=snap.docs.map(norm).sort(function(a,b){
+            const av=Number(a.clientCreatedAtMs||0),bv=Number(b.clientCreatedAtMs||0);
+            return bv-av;
+          });
+          appendNav();
+          try{if(typeof active!=='undefined'&&active==='drivers')renderDriverSection();}catch(e){}
+        },function(err){console.warn('driver requests listener',err);});
+      }
+      if(!driverUnsub){
+        driverUnsub=f.fs.onSnapshot(f.fs.collection(f.db,DRIVERS),function(snap){
+          driverRows=snap.docs.map(norm);
+          try{if(typeof active!=='undefined'&&active==='drivers')renderDriverSection();}catch(e){}
+        },function(err){console.warn('drivers listener',err);});
+      }
+    }catch(e){console.warn('driver admin start failed',e);}
+  }
+
+  ensureStyle();
+  appendNav();
+  start(false);
+})();
+`;
+  }
+
+  function inject(){
+    const fr=document.getElementById('linkoAdminFrame');
+    if(!fr||!fr.contentDocument||!fr.contentDocument.body)return false;
+    try{
+      const w=fr.contentWindow,doc=fr.contentDocument;
+      if(w.__linkoDriverAdminInside){
+        try{if(typeof w.linkoRenderDriverAdmin==='function'&&w.active==='drivers')w.linkoRenderDriverAdmin();}catch(e){}
+        return true;
+      }
+      const s=doc.createElement('script');
+      s.id='linko-driver-admin-injected';
+      s.textContent=adminCode();
+      doc.body.appendChild(s);
+      return true;
+    }catch(e){
+      console.warn('driver admin inject waiting',e);
+      return false;
+    }
+  }
+
+  function boot(){
+    const fr=document.getElementById('linkoAdminFrame');
+    if(fr&&!fr.__linkoDriverAdminLoadBound){
+      fr.__linkoDriverAdminLoadBound=true;
+      fr.addEventListener('load',function(){setTimeout(inject,120);setTimeout(inject,500);});
+    }
+    setTimeout(inject,100);
+    setTimeout(inject,600);
+    setTimeout(inject,1600);
+  }
+
+  document.addEventListener('DOMContentLoaded',boot,{once:true});
+  window.addEventListener('load',boot,{once:true});
+})();
+</script>
+
+<style id="linkoDriverMemberOrderStatusStyle">
+.linko-driver-status-note{
+  margin-top:8px;padding:9px 10px;border-radius:14px;
+  background:#ecfdf3;border:1px solid #86efac;color:#166534;
+  font-size:11px;font-weight:900;line-height:1.65
+}
+body.linko-dark .linko-driver-status-note{
+  background:#052e22;border-color:#22c55e;color:#bbf7d0
+}
+</style>
+<script id="linkoDriverMemberOrderStatusPatch">
+(function(){
+  'use strict';
+  if(window.__linkoDriverMemberOrderStatusPatch)return;
+  window.__linkoDriverMemberOrderStatusPatch=true;
+
+  function text(status){
+    status=String(status||'').toLowerCase();
+    if(status==='assigned')return 'تمت الموافقة على طلبك، قريباً سيكون المندوب عندك';
+    if(status==='picked_up')return 'المندوب استلم الطلب وهو في الطريق إليك';
+    if(status==='delivered')return 'تم تسليم الطلب بنجاح';
+    if(status==='pending'||status==='new'||status==='جديد')return 'طلبك قيد المراجعة وبانتظار مندوب';
+    return '';
+  }
+
+  function decorate(){
+    const page=document.getElementById('ordersPage');
+    if(!page)return;
+    page.querySelectorAll('.order-card').forEach(function(card){
+      const badge=card.querySelector('.status');
+      if(!badge)return;
+      const value=String(badge.textContent||'').trim();
+      const t=text(value);
+      if(!t)return;
+      let note=card.querySelector('.linko-driver-status-note');
+      if(!note){
+        note=document.createElement('div');
+        note.className='linko-driver-status-note';
+        card.appendChild(note);
+      }
+      note.textContent=t;
+      if(value==='assigned')badge.textContent='تم تعيين مندوب';
+      else if(value==='picked_up')badge.textContent='المندوب بالطريق';
+      else if(value==='delivered')badge.textContent='تم التسليم';
+      else if(value==='pending')badge.textContent='بانتظار مندوب';
+    });
+  }
+
+  const oldGo=window.go;
+  if(typeof oldGo==='function'){
+    window.go=function(id){
+      const r=oldGo.apply(this,arguments);
+      if(id==='ordersPage'){setTimeout(decorate,50);setTimeout(decorate,250);}
+      return r;
+    };
+  }
+  window.linkoDecorateDriverOrderStatus=decorate;
 })();
 </script>
 
