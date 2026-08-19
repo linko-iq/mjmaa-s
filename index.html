@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- MEDINA_BUILD_V71_STARTUP_GUARD_20260804 -->
-<!-- LINKO_DELIVERY_LOCATION_PHASE1_20260819 -->
+<!-- LINKO_DELIVERY_LOCATION_PHASE1_FIX_LAZY_MAP_20260819 -->
 <!-- LINKO SUBSCRIPTION REQUESTS FINAL V48: REAPPLY ON EVERY ADMIN OPEN/FRAME LOAD -->
 <html lang="ar" dir="rtl"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" /><title>سوق المدينة الكبير | واجهة الأعضاء</title><style id="linkoNoStartupBlackScreenFinal">
 html{color-scheme:light!important;background:#dcefe5!important;}
@@ -666,7 +666,6 @@ html.medina-v71-startup-recovery #floatCart{
 }
 </style>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="">
 
 <style id="linkoDeliveryLocationPhase1Styles">
 /* ===== LINKO_DELIVERY_LOCATION_PHASE1_20260819 ===== */
@@ -730,7 +729,13 @@ body.linko-dark .delivery-location-status.confirmed small{color:#bbf7d0}
 .delivery-map-header h2{font-size:20px;font-weight:900;display:flex;align-items:center;gap:7px}
 .delivery-map-header h2 .mi{color:#d97706}
 .delivery-map-header p{margin-top:3px;color:#475467;font-weight:800;font-size:11.5px;line-height:1.65}
-.delivery-map-canvas{width:100%;height:100%;min-height:300px;background:#dbe7df}
+.delivery-map-canvas{width:100%;height:100%;min-height:300px;background:#dbe7df;position:relative}
+.delivery-map-loading{position:absolute;inset:0;display:grid;place-content:center;justify-items:center;gap:8px;padding:24px;text-align:center;background:linear-gradient(180deg,#e8f4ec,#dcefe5);color:#111827;z-index:3}
+.delivery-map-loading .mi{font-size:38px;color:#d97706;animation:linkoMapSpin 1s linear infinite}
+.delivery-map-loading b{font-size:16px;font-weight:900}.delivery-map-loading small{max-width:300px;color:#475467;font-weight:800;line-height:1.7}
+.delivery-map-loading.error .mi{animation:none;color:#dc2626}.delivery-map-loading .btn{margin-top:5px}
+@keyframes linkoMapSpin{to{transform:rotate(360deg)}}
+body.linko-dark .delivery-map-loading{background:linear-gradient(180deg,#0f172a,#020617);color:#fff}body.linko-dark .delivery-map-loading small{color:#cbd5e1}
 .delivery-map-bottom{
   padding:11px 14px max(12px,env(safe-area-inset-bottom));
   background:#fff;border-top:1px solid #cbd5e1;box-shadow:0 -10px 30px rgba(15,23,42,.10);
@@ -12716,7 +12721,6 @@ body.linko-dark #linkoUrgentMemberNotificationPopup small{color:#fde68a!importan
 </div>
 
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
 <script id="linkoDeliveryLocationPhase1Runtime">
 (function(){
   'use strict';
@@ -12725,7 +12729,62 @@ body.linko-dark #linkoUrgentMemberNotificationPopup small{color:#fde68a!importan
 
   const STORAGE_KEY = 'linko_pending_delivery_location_v1';
   const DEFAULT_CENTER = [33.3152,44.3661]; // Baghdad fallback only for map opening.
+  let leafletPromise = null;
   let map = null;
+
+  function loadLeafletAsset(base){
+    return new Promise(function(resolve,reject){
+      if(typeof L !== 'undefined'){ resolve(true); return; }
+
+      const oldCss=document.querySelector('link[data-linko-leaflet-css]');
+      if(!oldCss){
+        const css=document.createElement('link');
+        css.rel='stylesheet';
+        css.href=base+'/leaflet.css';
+        css.crossOrigin='anonymous';
+        css.dataset.linkoLeafletCss='1';
+        document.head.appendChild(css);
+      }
+
+      const script=document.createElement('script');
+      script.src=base+'/leaflet.js';
+      script.crossOrigin='anonymous';
+      script.async=true;
+      script.dataset.linkoLeafletJs='1';
+      const timer=setTimeout(function(){
+        try{script.remove();}catch(e){}
+        reject(new Error('leaflet-timeout'));
+      },7000);
+      script.onload=function(){
+        clearTimeout(timer);
+        if(typeof L !== 'undefined') resolve(true);
+        else reject(new Error('leaflet-missing'));
+      };
+      script.onerror=function(){
+        clearTimeout(timer);
+        try{script.remove();}catch(e){}
+        reject(new Error('leaflet-load-failed'));
+      };
+      document.head.appendChild(script);
+    });
+  }
+
+  function loadLeaflet(){
+    if(typeof L !== 'undefined') return Promise.resolve(true);
+    if(leafletPromise) return leafletPromise;
+
+    leafletPromise=loadLeafletAsset('https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist')
+      .catch(function(){
+        // fallback only when the first CDN is unavailable
+        return loadLeafletAsset('https://unpkg.com/leaflet@1.9.4/dist');
+      })
+      .catch(function(err){
+        leafletPromise=null;
+        throw err;
+      });
+
+    return leafletPromise;
+  }
   let marker = null;
   let draft = null;
   let locating = false;
@@ -12908,24 +12967,37 @@ body.linko-dark #linkoUrgentMemberNotificationPopup small{color:#fde68a!importan
 
   window.openDeliveryLocationMap = function(){
     const modal = document.getElementById('deliveryMapModal');
+    const canvas = document.getElementById('deliveryMapCanvas');
     if(!modal) return;
     modal.classList.add('show');
     modal.setAttribute('aria-hidden','false');
     document.body.classList.add('delivery-map-open');
 
-    setTimeout(function(){
-      if(!ensureMap()) return;
-      map.invalidateSize();
+    if(canvas && !map){
+      canvas.innerHTML='<div class="delivery-map-loading"><span class="mi">sync</span><b>جاري تحميل الخريطة...</b><small>لن يؤثر تحميل الخريطة على بقية الموقع.</small></div>';
+    }
 
-      const current = window.__linkoDeliveryLocation;
-      if(current && current.confirmed){
-        setDraft(current.lat,current.lng,current.accuracy,true);
-      }else{
-        const confirm = document.getElementById('confirmDeliveryLocationBtn');
-        if(confirm) confirm.disabled = true;
-        window.locateDeliveryDevice();
+    loadLeaflet().then(function(){
+      setTimeout(function(){
+        if(canvas && !map) canvas.innerHTML='';
+        if(!ensureMap()) return;
+        map.invalidateSize();
+
+        const current = window.__linkoDeliveryLocation;
+        if(current && current.confirmed){
+          setDraft(current.lat,current.lng,current.accuracy,true);
+        }else{
+          const confirm = document.getElementById('confirmDeliveryLocationBtn');
+          if(confirm) confirm.disabled = true;
+          window.locateDeliveryDevice();
+        }
+      },40);
+    }).catch(function(err){
+      console.warn('LINKO map library load failed',err);
+      if(canvas){
+        canvas.innerHTML='<div class="delivery-map-loading error"><span class="mi">wifi_off</span><b>تعذر تحميل الخريطة</b><small>تحقق من الإنترنت ثم أغلق الخريطة وحاول مرة أخرى.</small><button class="btn secondary" type="button" onclick="closeDeliveryLocationMap()">رجوع</button></div>';
       }
-    },80);
+    });
   };
 
   window.closeDeliveryLocationMap = function(){
