@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#0b1220">
+<title>بوابة مندوبي سوق المدينة الكبير</title>
+<style>
+:root{
+  --bg:#eef6f1;--card:#fff;--ink:#0f172a;--muted:#64748b;--line:#d9e2e8;
+  --green:#087443;--green2:#18b979;--gold:#f4b544;--red:#dc2626;--blue:#2563eb;
+  --shadow:0 20px 60px rgba(15,23,42,.13);--soft:0 10px 28px rgba(15,23,42,.08)
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{min-height:100%;background:var(--bg)}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Tahoma,Arial,sans-serif;
+  color:var(--ink);overflow-x:hidden;
+  background:
+    radial-gradient(circle at 10% 5%,rgba(244,181,68,.18),transparent 30%),
+    radial-gradient(circle at 90% 12%,rgba(24,185,121,.16),transparent 34%),
+    linear-gradient(180deg,#fbfdfc,#edf6f1)
+}
+button,input,select{font:inherit}
+button{border:0;cursor:pointer}
+.hidden{display:none!important}
+.screen{min-height:100dvh;padding:16px}
+.center{display:grid;place-items:center}
+.auth-card{
+  width:min(520px,100%);background:rgba(255,255,255,.96);border:1px solid #fff;
+  border-radius:32px;padding:22px;box-shadow:var(--shadow)
+}
+.logo{
+  width:92px;height:92px;border-radius:28px;margin:0 auto 13px;
+  display:grid;place-items:center;background:linear-gradient(145deg,#111827,#0f5132);
+  color:var(--gold);box-shadow:0 18px 42px rgba(15,23,42,.20)
+}
+.logo svg{width:52px;height:52px}
+h1{font-size:28px;font-weight:900;text-align:center}
+.lead{text-align:center;color:var(--muted);font-weight:700;line-height:1.8;margin:8px 0 17px}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:6px;background:#f1f5f9;padding:5px;border-radius:18px;margin-bottom:15px}
+.tabs button{min-height:44px;border-radius:14px;background:transparent;font-weight:900;color:#64748b}
+.tabs button.active{background:#fff;color:#0f172a;box-shadow:var(--soft)}
+.form{display:none}
+.form.active{display:block}
+.field{display:grid;gap:7px;margin-bottom:11px}
+label{font-weight:900;font-size:13px;color:#334155}
+input,select{
+  width:100%;min-height:52px;border-radius:17px;border:1px solid #cbd5e1;background:#fff;
+  padding:0 13px;outline:0;color:#0f172a;font-weight:800;font-size:16px
+}
+input:focus,select:focus{border-color:#18b979;box-shadow:0 0 0 4px rgba(24,185,121,.12)}
+.btn{
+  min-height:52px;border-radius:17px;padding:10px 14px;display:flex;align-items:center;justify-content:center;gap:8px;
+  background:linear-gradient(135deg,var(--green),var(--green2));color:#fff;font-weight:900;box-shadow:0 13px 26px rgba(8,116,67,.18)
+}
+.btn.full{width:100%}
+.btn.secondary{background:#fff;color:#0f172a;border:1px solid #cbd5e1;box-shadow:var(--soft)}
+.btn.red{background:linear-gradient(135deg,#ef4444,#991b1b)}
+.btn.blue{background:linear-gradient(135deg,#1d4ed8,#3b82f6)}
+.btn.gold{background:linear-gradient(135deg,#d99419,#f5bd53);color:#111827}
+.btn[disabled]{opacity:.52;cursor:not-allowed}
+.notice{
+  margin-top:11px;border-radius:16px;padding:10px 12px;font-size:12px;font-weight:800;line-height:1.7;
+  background:#eff6ff;border:1px solid #bfdbfe;color:#1e40af
+}
+.notice.wait{background:#fff7ed;border-color:#fed7aa;color:#9a3412}
+.notice.ok{background:#ecfdf3;border-color:#86efac;color:#166534}
+.notice.bad{background:#fef2f2;border-color:#fecaca;color:#991b1b}
+.app{display:none;min-height:100dvh}
+.app.show{display:block}
+.top{
+  position:sticky;top:0;z-index:30;padding:12px 14px;background:rgba(238,246,241,.94);
+  border-bottom:1px solid rgba(203,213,225,.8);backdrop-filter:blur(12px)
+}
+.top-row{max-width:900px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.brand{display:flex;align-items:center;gap:9px;min-width:0}
+.brand-icon{
+  width:48px;height:48px;border-radius:17px;display:grid;place-items:center;
+  background:linear-gradient(145deg,#111827,#0f5132);color:#f4b544;flex:0 0 auto
+}
+.brand-icon svg{width:27px;height:27px}
+.brand h2{font-size:17px;font-weight:900}
+.brand small{display:block;color:var(--muted);font-size:11px;font-weight:800}
+.icon-btn{
+  width:46px;height:46px;border-radius:16px;background:#fff;border:1px solid #dbe3ea;display:grid;place-items:center;box-shadow:var(--soft)
+}
+.wrap{max-width:900px;margin:auto;padding:14px 14px 90px}
+.driver-hero{
+  padding:16px;border-radius:26px;background:linear-gradient(135deg,#111827,#0f5132);color:#fff;box-shadow:var(--shadow);
+  display:flex;align-items:center;justify-content:space-between;gap:12px
+}
+.driver-hero h2{font-size:20px;font-weight:900}
+.driver-hero p{font-size:12px;opacity:.84;font-weight:700;line-height:1.7;margin-top:4px}
+.driver-state{
+  min-width:92px;padding:9px 10px;border-radius:15px;background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.16);text-align:center
+}
+.driver-state small{display:block;font-size:10px;opacity:.8}
+.driver-state b{display:block;margin-top:2px}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:12px 0}
+.kpi{background:#fff;border:1px solid var(--line);border-radius:20px;padding:12px;box-shadow:var(--soft)}
+.kpi small{color:var(--muted);font-size:10px;font-weight:900}
+.kpi b{display:block;font-size:22px;margin-top:3px}
+.section-head{display:flex;align-items:end;justify-content:space-between;gap:10px;margin:18px 2px 9px}
+.section-head h3{font-size:18px;font-weight:900}
+.section-head small{color:var(--muted);font-weight:800;font-size:11px}
+.orders{display:grid;gap:10px}
+.order{
+  background:#fff;border:1px solid var(--line);border-radius:24px;padding:13px;box-shadow:var(--soft);display:grid;gap:10px
+}
+.order-head{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.order-head h3{font-size:16px;font-weight:900}
+.order-head p{font-size:11px;color:var(--muted);font-weight:800;margin-top:3px}
+.status{
+  border-radius:999px;padding:5px 9px;font-size:10px;font-weight:900;background:#fff7ed;color:#9a3412;white-space:nowrap
+}
+.status.ok{background:#dcfce7;color:#166534}
+.status.blue{background:#dbeafe;color:#1d4ed8}
+.order-preview{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}
+.pill{padding:8px;border-radius:14px;background:#f8fafc;border:1px solid #e2e8f0;font-size:11px;font-weight:900}
+.pill small{display:block;color:#64748b;font-size:9px;margin-bottom:2px}
+.items{display:grid;gap:6px}
+.item{padding:8px;border-radius:13px;background:#f8fafc;border:1px solid #e2e8f0;font-size:11px;font-weight:800;line-height:1.6}
+.customer{
+  padding:11px;border-radius:17px;background:#f0fdf4;border:1px solid #bbf7d0;display:grid;gap:6px
+}
+.customer h4{font-size:13px;font-weight:900;color:#166534}
+.customer p{font-size:11px;font-weight:800;line-height:1.7;color:#14532d}
+.actions{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.actions .wide{grid-column:1/-1}
+.empty{
+  padding:23px;border-radius:22px;background:#fff;border:1px dashed #cbd5e1;text-align:center;color:#64748b;font-weight:900
+}
+.toast{
+  position:fixed;top:14px;left:12px;right:12px;z-index:1000;margin:auto;width:min(540px,calc(100% - 24px));
+  padding:12px;border-radius:17px;background:#111827;color:#fff;text-align:center;font-weight:900;display:none;box-shadow:var(--shadow)
+}
+.toast.show{display:block}
+.loader{
+  position:fixed;inset:0;z-index:900;background:rgba(238,246,241,.92);display:none;place-items:center
+}
+.loader.show{display:grid}
+.loader-card{padding:18px 22px;border-radius:22px;background:#fff;border:1px solid #e2e8f0;box-shadow:var(--shadow);text-align:center;font-weight:900}
+.spin{width:34px;height:34px;border-radius:50%;border:4px solid #dbe4ea;border-top-color:#0f8a55;margin:0 auto 9px;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media(max-width:520px){
+  .screen{padding:12px}.auth-card{padding:18px 15px;border-radius:27px}
+  h1{font-size:25px}.kpis{grid-template-columns:1fr 1fr}.kpis .kpi:last-child{grid-column:1/-1}
+  .actions{grid-template-columns:1fr}.actions .wide{grid-column:auto}
+  .order-preview{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute">
+  <symbol id="i-bike" viewBox="0 0 24 24"><path d="M5.5 17.5a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm13 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM7 14h4l2-5h-3l-1-2H6m7 2 2.5 5H18M15.5 7h2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="M12 21s6-5.1 6-11A6 6 0 1 0 6 10c0 5.9 6 11 6 11Z" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="10" r="2.2" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M8 3H5.5A2.5 2.5 0 0 0 3 5.5C3 14.1 9.9 21 18.5 21A2.5 2.5 0 0 0 21 18.5V16l-4-1-1.2 2.2a14 14 0 0 1-9-9L9 7 8 3Z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></symbol>
+  <symbol id="i-exit" viewBox="0 0 24 24"><path d="M10 4H5v16h5M14 8l4 4-4 4M9 12h9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+</svg>
+
+<div class="toast" id="toast"></div>
+<div class="loader" id="loader"><div class="loader-card"><div class="spin"></div><span id="loaderText">جاري التحميل...</span></div></div>
+
+<section class="screen center" id="authScreen">
+  <div class="auth-card">
+    <div class="logo"><svg><use href="#i-bike"/></svg></div>
+    <h1>بوابة المندوبين</h1>
+    <p class="lead">سوق المدينة الكبير — تسجيل المندوبين واستلام طلبات التوصيل.</p>
+    <div class="tabs">
+      <button class="active" id="loginTab" type="button">دخول</button>
+      <button id="registerTab" type="button">تسجيل مندوب</button>
+    </div>
+
+    <form class="form active" id="loginForm">
+      <div class="field"><label>رقم الهاتف</label><input id="loginPhone" inputmode="tel" placeholder="07XXXXXXXXX" autocomplete="tel" required></div>
+      <div class="field"><label>الرمز السري</label><input id="loginCode" type="password" inputmode="numeric" placeholder="اكتب الرمز" autocomplete="current-password" required></div>
+      <button class="btn full" type="submit">دخول المندوب</button>
+      <div class="notice">بعد موافقة الإدارة على طلبك، تدخل من هنا. تسجيل الدخول يبقى محفوظاً على هذا الجهاز.</div>
+    </form>
+
+    <form class="form" id="registerForm">
+      <div class="field"><label>الاسم الكامل</label><input id="regName" placeholder="اسم المندوب" autocomplete="name" required></div>
+      <div class="field"><label>رقم الهاتف</label><input id="regPhone" inputmode="tel" placeholder="07XXXXXXXXX" autocomplete="tel" required></div>
+      <div class="field"><label>المنطقة / السكن</label><input id="regArea" placeholder="مثال: بغداد - البلديات" required></div>
+      <div class="field"><label>نوع المركبة</label>
+        <select id="regVehicle" required>
+          <option value="">اختر نوع المركبة</option>
+          <option>دراجة نارية</option><option>سيارة</option><option>دراجة هوائية</option><option>أخرى</option>
+        </select>
+      </div>
+      <div class="field"><label>رقم المركبة / اللوحة (اختياري)</label><input id="regVehicleNo" placeholder="إذا متوفر"></div>
+      <div class="field"><label>الرمز السري</label><input id="regCode" type="password" inputmode="numeric" minlength="4" placeholder="4 أرقام أو أكثر" autocomplete="new-password" required></div>
+      <button class="btn full" type="submit">إرسال طلب التسجيل</button>
+      <div class="notice wait">بعد إرسال الطلب تبقى حالته قيد الانتظار إلى أن توافق الإدارة.</div>
+    </form>
+
+    <div id="authNotice"></div>
+  </div>
+</section>
+
+<div class="app" id="app">
+  <header class="top">
+    <div class="top-row">
+      <div class="brand">
+        <div class="brand-icon"><svg><use href="#i-bike"/></svg></div>
+        <div><h2>لوحة المندوب</h2><small id="driverMini">سوق المدينة الكبير</small></div>
+      </div>
+      <button class="icon-btn" id="logoutBtn" type="button" aria-label="خروج"><svg width="23" height="23"><use href="#i-exit"/></svg></button>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section class="driver-hero">
+      <div><h2 id="driverName">أهلاً بك</h2><p id="driverInfo">جاري تجهيز بيانات المندوب...</p></div>
+      <div class="driver-state"><small>الحالة</small><b id="driverState">متاح</b></div>
+    </section>
+
+    <section class="kpis">
+      <div class="kpi"><small>طلبات متاحة</small><b id="availableCount">0</b></div>
+      <div class="kpi"><small>طلبي الحالي</small><b id="currentCount">0</b></div>
+      <div class="kpi"><small>تم التسليم</small><b id="doneCount">0</b></div>
+    </section>
+
+    <div class="section-head"><div><h3>طلبي الحالي</h3><small>تفاصيل العميل تظهر بعد قبول الطلب.</small></div></div>
+    <div class="orders" id="currentOrders"></div>
+
+    <div class="section-head"><div><h3>الطلبات المتاحة</h3><small>أول مندوب يقبل الطلب يتم تثبيته عليه.</small></div></div>
+    <div class="orders" id="availableOrders"></div>
+
+    <div class="section-head"><div><h3>آخر الطلبات المكتملة</h3><small>سجل مختصر للطلبات التي سلمتها.</small></div></div>
+    <div class="orders" id="doneOrders"></div>
+  </main>
+</div>
+
+<script type="module">
+const FIREBASE_CONFIG={
+  apiKey:"AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA",
+  authDomain:"medina-bazaar-e2c18.firebaseapp.com",
+  projectId:"medina-bazaar-e2c18",
+  storageBucket:"medina-bazaar-e2c18.firebasestorage.app",
+  messagingSenderId:"375693456199",
+  appId:"1:375693456199:web:2b36e0368ed898a7a11262"
+};
+const VERSION="12.15.0";
+const DRIVER_REQUESTS="driverRequests";
+const DRIVERS="drivers";
+const ORDERS="orders";
+const SESSION_KEY="medina_driver_session_v1";
+
+const $=s=>document.querySelector(s);
+const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
+const clean=v=>String(v??"").trim();
+let f=null,driver=null,orders=[],ordersUnsub=null,driverUnsub=null,busy=false;
+
+function toast(msg){
+  const t=$("#toast");t.textContent=msg;t.classList.add("show");
+  clearTimeout(window.__tt);window.__tt=setTimeout(()=>t.classList.remove("show"),2600);
+}
+function loading(show,text="جاري التحميل..."){
+  $("#loaderText").textContent=text;$("#loader").classList.toggle("show",!!show);
+}
+function normalizePhone(v){
+  let n=String(v||"").replace(/\D/g,"");
+  if(n.startsWith("00964"))n=n.slice(2);
+  if(n.startsWith("0"))n="964"+n.slice(1);
+  return n;
+}
+function phoneDisplay(v){
+  const n=normalizePhone(v);
+  return n.startsWith("964")?"0"+n.slice(3):n;
+}
+async function sha(text){
+  const data=new TextEncoder().encode(text);
+  const digest=await crypto.subtle.digest("SHA-256",data);
+  return [...new Uint8Array(digest)].map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+async function driverId(phone){
+  return "drv_"+(await sha("MEDINA_DRIVER_PHONE:"+normalizePhone(phone))).slice(0,32);
+}
+async function codeHash(phone,code){
+  return await sha("MEDINA_DRIVER_CODE:"+normalizePhone(phone)+":"+clean(code));
+}
+async function firebase(){
+  if(f)return f;
+  const [appMod,fs]=await Promise.all([
+    import(`https://www.gstatic.com/firebasejs/${VERSION}/firebase-app.js`),
+    import(`https://www.gstatic.com/firebasejs/${VERSION}/firebase-firestore.js`)
+  ]);
+  const app=appMod.getApps().length?appMod.getApps()[0]:appMod.initializeApp(FIREBASE_CONFIG);
+  f={db:fs.getFirestore(app),fs};
+  return f;
+}
+function switchTab(which){
+  $("#loginTab").classList.toggle("active",which==="login");
+  $("#registerTab").classList.toggle("active",which==="register");
+  $("#loginForm").classList.toggle("active",which==="login");
+  $("#registerForm").classList.toggle("active",which==="register");
+  $("#authNotice").innerHTML="";
+}
+$("#loginTab").onclick=()=>switchTab("login");
+$("#registerTab").onclick=()=>switchTab("register");
+
+function setAuthNotice(kind,text){
+  $("#authNotice").innerHTML=`<div class="notice ${kind||""}">${esc(text)}</div>`;
+}
+
+$("#registerForm").addEventListener("submit",async e=>{
+  e.preventDefault();if(busy)return;
+  const name=clean($("#regName").value),phone=normalizePhone($("#regPhone").value),area=clean($("#regArea").value);
+  const vehicleType=clean($("#regVehicle").value),vehicleNumber=clean($("#regVehicleNo").value),code=clean($("#regCode").value);
+  if(!name||phone.length<10||!area||!vehicleType||code.length<4){toast("أكمل بيانات التسجيل بشكل صحيح");return}
+  busy=true;loading(true,"جاري إرسال طلب المندوب...");
+  try{
+    const fb=await firebase(),id=await driverId(phone),hash=await codeHash(phone,code);
+    const driverSnap=await fb.fs.getDoc(fb.fs.doc(fb.db,DRIVERS,id));
+    if(driverSnap.exists()&&String(driverSnap.data().status||"").toLowerCase()==="active"){
+      setAuthNotice("ok","هذا الرقم لديه حساب مندوب مفعل. استخدم صفحة الدخول.");
+      switchTab("login");$("#loginPhone").value=phoneDisplay(phone);return;
+    }
+    const reqRef=fb.fs.doc(fb.db,DRIVER_REQUESTS,id);
+    const reqSnap=await fb.fs.getDoc(reqRef);
+    if(reqSnap.exists()){
+      const st=String(reqSnap.data().status||"pending").toLowerCase();
+      if(st==="pending"){setAuthNotice("wait","طلبك السابق قيد الانتظار، يرجى انتظار موافقة الإدارة.");return}
+      if(st==="approved"){setAuthNotice("ok","تمت الموافقة على طلبك. انتقل إلى تسجيل الدخول.");switchTab("login");$("#loginPhone").value=phoneDisplay(phone);return}
+      if(st==="rejected"){setAuthNotice("bad","تم رفض طلب التسجيل السابق. راجع إدارة سوق المدينة.");return}
+    }
+    await fb.fs.setDoc(reqRef,{
+      requestId:id,name,phone,phoneDisplay:phoneDisplay(phone),area,vehicleType,vehicleNumber,
+      codeHash:hash,status:"pending",clientCreatedAtMs:Date.now(),
+      createdAt:fb.fs.serverTimestamp(),updatedAt:fb.fs.serverTimestamp()
+    });
+    $("#registerForm").reset();
+    setAuthNotice("wait","تم إرسال طلبك بنجاح. الطلب الآن قيد انتظار موافقة الإدارة.");
+  }catch(err){
+    console.error(err);
+    setAuthNotice("bad",String(err&&err.code||"").includes("permission-denied")
+      ?"صلاحيات Firebase لا تسمح حالياً بتسجيل المندوب. نحتاج إضافة قواعد المندوبين."
+      :"تعذر إرسال طلب التسجيل، تحقق من الإنترنت وحاول مرة أخرى.");
+  }finally{busy=false;loading(false)}
+});
+
+$("#loginForm").addEventListener("submit",async e=>{
+  e.preventDefault();if(busy)return;
+  const phone=normalizePhone($("#loginPhone").value),code=clean($("#loginCode").value);
+  if(phone.length<10||code.length<4){toast("اكتب رقم الهاتف والرمز بشكل صحيح");return}
+  busy=true;loading(true,"جاري التحقق من حساب المندوب...");
+  try{
+    const fb=await firebase(),id=await driverId(phone);
+    const snap=await fb.fs.getDoc(fb.fs.doc(fb.db,DRIVERS,id));
+    if(!snap.exists()){setAuthNotice("wait","لا يوجد حساب مندوب مفعل بهذا الرقم، أو أن طلبك ما زال قيد الانتظار.");return}
+    const d={id:snap.id,...snap.data()};
+    if(String(d.status||"").toLowerCase()!=="active"){setAuthNotice("bad","حساب المندوب غير مفعل حالياً. راجع الإدارة.");return}
+    const hash=await codeHash(phone,code);
+    if(hash!==clean(d.codeHash)){setAuthNotice("bad","رقم الهاتف أو الرمز غير صحيح.");return}
+    localStorage.setItem(SESSION_KEY,id);
+    await enterApp(d);
+  }catch(err){
+    console.error(err);
+    setAuthNotice("bad",String(err&&err.code||"").includes("permission-denied")
+      ?"صلاحيات Firebase لا تسمح حالياً بدخول المندوب."
+      :"تعذر تسجيل الدخول الآن.");
+  }finally{busy=false;loading(false)}
+});
+
+async function restoreSession(){
+  const id=clean(localStorage.getItem(SESSION_KEY));
+  if(!id)return;
+  loading(true,"جاري استعادة جلسة المندوب...");
+  try{
+    const fb=await firebase(),snap=await fb.fs.getDoc(fb.fs.doc(fb.db,DRIVERS,id));
+    if(snap.exists()&&String(snap.data().status||"").toLowerCase()==="active"){
+      await enterApp({id:snap.id,...snap.data()});
+    }else localStorage.removeItem(SESSION_KEY);
+  }catch(e){console.warn(e)}
+  finally{loading(false)}
+}
+
+async function enterApp(d){
+  driver=d;
+  $("#authScreen").classList.add("hidden");
+  $("#app").classList.add("show");
+  $("#driverName").textContent="أهلاً، "+clean(d.name||"مندوب");
+  $("#driverMini").textContent=clean(d.phoneDisplay||d.phone||"سوق المدينة الكبير");
+  $("#driverInfo").textContent=[clean(d.vehicleType),clean(d.vehicleNumber),clean(d.area)].filter(Boolean).join(" • ");
+  startListeners();
+}
+function leave(){
+  if(ordersUnsub){ordersUnsub();ordersUnsub=null}
+  if(driverUnsub){driverUnsub();driverUnsub=null}
+  driver=null;orders=[];
+  localStorage.removeItem(SESSION_KEY);
+  $("#app").classList.remove("show");
+  $("#authScreen").classList.remove("hidden");
+  $("#loginCode").value="";
+  switchTab("login");
+}
+$("#logoutBtn").onclick=leave;
+
+function orderStatus(o){return String(o.status||"").trim().toLowerCase()}
+function available(o){
+  const s=orderStatus(o);
+  const free=(s==="pending"||s==="new"||s==="جديد")&&!clean(o.driverId);
+  const loc=o.customerLocation||{};
+  return free && (loc.confirmed===true||Number.isFinite(Number(o.customerLocationLat)));
+}
+function mine(o){
+  return driver&&clean(o.driverId)===clean(driver.id)&&["assigned","picked_up"].includes(orderStatus(o));
+}
+function completed(o){
+  return driver&&clean(o.driverId)===clean(driver.id)&&orderStatus(o)==="delivered";
+}
+function dateText(o){
+  try{
+    if(o.createdAt&&typeof o.createdAt.toDate==="function")return o.createdAt.toDate().toLocaleString("ar-IQ");
+  }catch(e){}
+  return clean(o.createdAtText||o.date)||"-";
+}
+function itemsOf(o){return Array.isArray(o.items)?o.items:Array.isArray(o.products)?o.products:[]}
+function mapUrl(o){
+  if(clean(o.customerLocationMapUrl))return clean(o.customerLocationMapUrl);
+  const loc=o.customerLocation||{};
+  const lat=Number(loc.lat??o.customerLocationLat),lng=Number(loc.lng??o.customerLocationLng);
+  if(!Number.isFinite(lat)||!Number.isFinite(lng))return "";
+  return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(lat+","+lng)}&travelmode=driving&dir_action=navigate`;
+}
+function statusArabic(s){
+  s=String(s||"").toLowerCase();
+  return s==="assigned"?"تم تعيينك":s==="picked_up"?"بالطريق للعميل":s==="delivered"?"تم التسليم":"متاح";
+}
+function itemHtml(x,i){
+  return `<div class="item"><b>${i+1}. ${esc(x.name||"منتج")}</b><br>الكمية: ${esc(x.quantity||x.qty||1)}${x.details?`<br>التفاصيل: ${esc(x.details)}`:""}${x.note?`<br>ملاحظة: ${esc(x.note)}`:""}</div>`;
+}
+function availableCard(o){
+  const its=itemsOf(o);
+  return `<article class="order">
+    <div class="order-head"><div><h3>طلب ${esc(o.orderNumber||o.id)}</h3><p>${esc(dateText(o))}</p></div><span class="status">متاح</span></div>
+    <div class="order-preview">
+      <div class="pill"><small>الفرع</small>${esc(o.branch||"غير محدد")}</div>
+      <div class="pill"><small>عدد الأصناف</small>${its.length}</div>
+      <div class="pill"><small>إجمالي الكمية</small>${esc(o.totalQuantity||its.reduce((s,x)=>s+Number(x.quantity||x.qty||1),0))}</div>
+      <div class="pill"><small>التوصيل</small>${esc(o.delivery||"-")}</div>
+    </div>
+    <button class="btn full" data-accept-order="${esc(o.id)}" type="button">قبول الطلب</button>
+  </article>`;
+}
+function mineCard(o){
+  const its=itemsOf(o),url=mapUrl(o),s=orderStatus(o);
+  return `<article class="order">
+    <div class="order-head"><div><h3>طلب ${esc(o.orderNumber||o.id)}</h3><p>${esc(dateText(o))}</p></div><span class="status ${s==="picked_up"?"blue":"ok"}">${esc(statusArabic(s))}</span></div>
+    <div class="customer">
+      <h4>تفاصيل العميل</h4>
+      <p><b>الاسم:</b> ${esc(o.memberName||"-")}<br>
+      <b>الهاتف:</b> ${esc(o.memberPhone||"-")}<br>
+      <b>العنوان:</b> ${esc(o.memberAddress||"-")}
+      ${o.note?`<br><b>ملاحظة:</b> ${esc(o.note)}`:""}</p>
+    </div>
+    <div class="items">${its.map(itemHtml).join("")}</div>
+    <div class="actions">
+      <a class="btn gold wide" href="${esc(url||"#")}" ${url?'target="_blank" rel="noopener"':"aria-disabled='true'"}><svg width="20" height="20"><use href="#i-map"/></svg> الذهاب إلى موقع العميل</a>
+      <a class="btn secondary" href="tel:${esc(clean(o.memberPhone))}"><svg width="18" height="18"><use href="#i-phone"/></svg> اتصال بالعميل</a>
+      ${s==="assigned"?`<button class="btn blue" data-order-status="picked_up" data-id="${esc(o.id)}" type="button">استلمت الطلب</button>`:`<button class="btn" data-order-status="delivered" data-id="${esc(o.id)}" type="button">تم التسليم</button>`}
+    </div>
+  </article>`;
+}
+function doneCard(o){
+  return `<article class="order">
+    <div class="order-head"><div><h3>طلب ${esc(o.orderNumber||o.id)}</h3><p>${esc(dateText(o))}</p></div><span class="status ok">تم التسليم</span></div>
+    <div class="order-preview"><div class="pill"><small>العميل</small>${esc(o.memberName||"-")}</div><div class="pill"><small>الفرع</small>${esc(o.branch||"-")}</div></div>
+  </article>`;
+}
+function render(){
+  const av=orders.filter(available),cur=orders.filter(mine),done=orders.filter(completed).sort((a,b)=>Number(b.clientCreatedAtMs||0)-Number(a.clientCreatedAtMs||0)).slice(0,10);
+  $("#availableCount").textContent=av.length;
+  $("#currentCount").textContent=cur.length;
+  $("#doneCount").textContent=orders.filter(completed).length;
+  $("#availableOrders").innerHTML=av.length?av.map(availableCard).join(""):`<div class="empty">لا توجد طلبات متاحة حالياً</div>`;
+  $("#currentOrders").innerHTML=cur.length?cur.map(mineCard).join(""):`<div class="empty">لا يوجد طلب مستلم حالياً</div>`;
+  $("#doneOrders").innerHTML=done.length?done.map(doneCard).join(""):`<div class="empty">لا توجد طلبات مكتملة بعد</div>`;
+}
+async function startListeners(){
+  const fb=await firebase();
+  if(ordersUnsub)ordersUnsub();
+  ordersUnsub=fb.fs.onSnapshot(
+    fb.fs.query(fb.fs.collection(fb.db,ORDERS),fb.fs.limit(150)),
+    snap=>{
+      orders=snap.docs.map(d=>({id:d.id,...d.data()}));
+      orders.sort((a,b)=>Number(b.clientCreatedAtMs||0)-Number(a.clientCreatedAtMs||0));
+      render();
+    },
+    err=>{console.error(err);toast("تعذر قراءة الطلبات من Firebase")}
+  );
+  if(driverUnsub)driverUnsub();
+  driverUnsub=fb.fs.onSnapshot(fb.fs.doc(fb.db,DRIVERS,driver.id),snap=>{
+    if(!snap.exists()||String(snap.data().status||"").toLowerCase()!=="active"){
+      toast("تم إيقاف حساب المندوب من الإدارة");leave();return;
+    }
+    driver={id:snap.id,...snap.data()};
+    $("#driverState").textContent="متاح";
+  });
+}
+async function acceptOrder(id){
+  if(busy||!driver)return;busy=true;loading(true,"جاري تثبيت الطلب باسمك...");
+  try{
+    const fb=await firebase(),ref=fb.fs.doc(fb.db,ORDERS,id);
+    await fb.fs.runTransaction(fb.db,async tx=>{
+      const snap=await tx.get(ref);
+      if(!snap.exists())throw new Error("ORDER_MISSING");
+      const o=snap.data()||{},s=String(o.status||"").toLowerCase();
+      if(clean(o.driverId)||!["pending","new","جديد"].includes(s))throw new Error("ORDER_TAKEN");
+      const loc=o.customerLocation||{};
+      if(!(loc.confirmed===true||Number.isFinite(Number(o.customerLocationLat))))throw new Error("NO_LOCATION");
+      tx.update(ref,{
+        status:"assigned",
+        driverId:driver.id,
+        driverName:clean(driver.name),
+        driverPhone:clean(driver.phoneDisplay||driver.phone),
+        acceptedAt:fb.fs.serverTimestamp(),
+        updatedAt:fb.fs.serverTimestamp()
+      });
+    });
+    toast("تم قبول الطلب وتثبيته باسمك");
+  }catch(err){
+    console.error(err);
+    toast(err&&err.message==="ORDER_TAKEN"?"هذا الطلب استلمه مندوب آخر":
+      err&&err.message==="NO_LOCATION"?"هذا الطلب لا يحتوي موقع تسليم":
+      "تعذر قبول الطلب الآن");
+  }finally{busy=false;loading(false)}
+}
+async function setOrderStatus(id,status){
+  if(busy||!driver)return;busy=true;loading(true,status==="delivered"?"جاري إنهاء الطلب...":"جاري تحديث حالة الطلب...");
+  try{
+    const fb=await firebase(),ref=fb.fs.doc(fb.db,ORDERS,id);
+    await fb.fs.runTransaction(fb.db,async tx=>{
+      const snap=await tx.get(ref);if(!snap.exists())throw new Error("ORDER_MISSING");
+      const o=snap.data()||{};
+      if(clean(o.driverId)!==clean(driver.id))throw new Error("NOT_YOUR_ORDER");
+      const payload={status,updatedAt:fb.fs.serverTimestamp()};
+      if(status==="picked_up")payload.pickedUpAt=fb.fs.serverTimestamp();
+      if(status==="delivered")payload.deliveredAt=fb.fs.serverTimestamp();
+      tx.update(ref,payload);
+    });
+    toast(status==="delivered"?"تم تسجيل تسليم الطلب":"تم تحديث الحالة");
+  }catch(err){console.error(err);toast("تعذر تحديث حالة الطلب")}
+  finally{busy=false;loading(false)}
+}
+document.addEventListener("click",e=>{
+  const a=e.target.closest("[data-accept-order]");if(a){acceptOrder(a.dataset.acceptOrder);return}
+  const s=e.target.closest("[data-order-status]");if(s)setOrderStatus(s.dataset.id,s.dataset.orderStatus);
+});
+restoreSession();
+</script>
+</body>
+</html>
