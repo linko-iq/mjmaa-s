@@ -10298,6 +10298,12 @@ if(form) form.reset();
     items.forEach(function(item, index){
       lines.push((index+1) + '. ' + item.name);
       lines.push('الكمية: ' + item.quantity);
+      if(Number(item.unitPrice || 0) > 0){
+        lines.push('سعر الوحدة: ' + Number(item.unitPrice || 0).toLocaleString('ar-IQ') + ' د.ع');
+        lines.push('مجموع المنتج: ' + Number(item.lineTotal || 0).toLocaleString('ar-IQ') + ' د.ع');
+      }else if(item.isSpecial){
+        lines.push('السعر: يحدد بعد المراجعة');
+      }
       if(item.branch) lines.push('الفرع: ' + item.branch);
       if(item.details) lines.push('التفاصيل: ' + item.details);
       if(item.note) lines.push('ملاحظة: ' + item.note);
@@ -10337,15 +10343,44 @@ if(form) form.reset();
     list.innerHTML = rows.length ? rows.map(function(order){
       const items = Array.isArray(order.items) ? order.items : (Array.isArray(order.products) ? order.products : []);
       const names = items.slice(0,4).map(function(item){ return esc(item.name) + ' × ' + Number(item.quantity || item.qty || 1); }).join('، ');
+      const key = clean(order.status || 'pending').toLowerCase();
+      const statusLabel =
+        key === 'assigned' ? 'تم تعيين مندوب' :
+        key === 'picked_up' ? 'المندوب بالطريق' :
+        key === 'delivered' ? 'تم التسليم' :
+        key === 'rejected' || key === 'cancelled' ? 'ملغي' :
+        'بانتظار مندوب';
+      const statusClass =
+        key === 'assigned' || key === 'delivered' ? 'ok' :
+        key === 'picked_up' ? 'info' :
+        key === 'rejected' || key === 'cancelled' ? 'bad' : 'pending';
+      const progressText =
+        key === 'assigned' ? 'تمت الموافقة على طلبك، قريباً سيكون المندوب عندك.' :
+        key === 'picked_up' ? 'المندوب استلم الطلب وهو في الطريق إليك.' :
+        key === 'delivered' ? 'تم تسليم الطلب بنجاح.' :
+        key === 'rejected' || key === 'cancelled' ? 'تم إلغاء الطلب.' :
+        'تم إرسال طلبك، جارٍ البحث عن مندوب.';
+      const total = Number(order.totalAmount || order.total || order.subtotal || 0) || 0;
+      const rating = Math.max(0,Math.min(5,Number(order.memberRating || 0) || 0));
+      const ratingHtml = key === 'delivered'
+        ? (rating
+          ? '<div class="linko-order-rating-done"><b>تقييمك: '+('★'.repeat(rating))+('☆'.repeat(5-rating))+'</b>'
+            +(clean(order.memberRatingComment)?'<small>'+esc(order.memberRatingComment)+'</small>':'')+'</div>'
+          : '<button class="btn secondary full linko-rate-order-btn" type="button" onclick="linkoOpenOrderRating(\''+esc(order.id || order.orderNumber)+'\')">⭐ تقييم الطلب والمندوب</button>')
+        : '';
       return '<div class="order-card"><div class="order-top"><div>'
         + '<h3>طلب رقم ' + esc(order.orderNumber || order.id) + '</h3>'
         + '<p>' + (names || (Number(order.totalQuantity || order.itemCount || 0) + ' منتجات')) + '</p>'
         + '<small>' + esc(dateText(order)) + '</small>'
+        + (total > 0 ? '<p class="linko-order-estimated-total">المجموع التقريبي: '+esc(total.toLocaleString('ar-IQ'))+' د.ع</p>' : '')
         + ((order.balanceDeducted === true || order.paymentDeducted === true)
           ? '<p style="margin-top:8px;font-weight:900">المبلغ النهائي: ' + esc(Number(order.finalAmount || order.deductedAmount || 0).toLocaleString('ar-IQ')) + ' د.ع</p>'
             + '<p style="margin-top:4px;color:#047857;font-weight:900">تم خصم المبلغ — الرصيد بعد الخصم: ' + esc(Number(order.balanceAfter || 0).toLocaleString('ar-IQ')) + ' د.ع</p>'
           : '')
-        + '</div></div></div>';
+        + '</div><span class="status '+statusClass+'" data-order-status="'+esc(key)+'">'+esc(statusLabel)+'</span></div>'
+        + '<div class="linko-order-progress-note '+statusClass+'">'+esc(progressText)+'</div>'
+        + ratingHtml
+        + '</div>';
     }).join('') : '<div class="empty-card">لا توجد طلبات بعد</div>';
   }
   async function startMemberOrdersListener(){
@@ -18010,18 +18045,24 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
   }
 
   function normalizeItems(rows){
-    return rows.map((item,index) => ({
-      index:index + 1,
-      id:clean(item.id),
-      name:clean(item.name) || 'منتج',
-      branchId:clean(item.branchId),
-      branch:clean(item.branchName || item.branch) || 'غير محدد',
-      quantity:Math.max(1, Number(item.qty || item.quantity || 1) || 1),
-      details:clean(item.details),
-      note:clean(item.note),
-      restaurant:clean(item.restaurant),
-      isSpecial:!!item.isSpecial
-    }));
+    return rows.map((item,index) => {
+      const quantity = Math.max(1, Number(item.qty || item.quantity || 1) || 1);
+      const unitPrice = Math.max(0, Number(item.price || item.unitPrice || 0) || 0);
+      return {
+        index:index + 1,
+        id:clean(item.id),
+        name:clean(item.name) || 'منتج',
+        branchId:clean(item.branchId),
+        branch:clean(item.branchName || item.branch) || 'غير محدد',
+        quantity,
+        unitPrice,
+        lineTotal:unitPrice * quantity,
+        details:clean(item.details),
+        note:clean(item.note),
+        restaurant:clean(item.restaurant),
+        isSpecial:!!item.isSpecial
+      };
+    });
   }
 
   function makeOrderNumber(){
@@ -18079,6 +18120,11 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
       if(item.note) lines.push('ملاحظة: ' + item.note);
       lines.push('------------------------------');
     });
+    const estimatedTotal = items.reduce((sum,item) => sum + Number(item.lineTotal || 0), 0);
+    if(estimatedTotal > 0){
+      lines.push('المجموع التقريبي: ' + estimatedTotal.toLocaleString('ar-IQ') + ' د.ع');
+      lines.push('------------------------------');
+    }
     if(note) lines.push('ملاحظة عامة: ' + note);
     return lines.join('\n');
   }
@@ -18175,6 +18221,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
       const delivery = deliveryValue();
       const nowText = new Date().toLocaleString('ar-IQ');
       const branches = [...new Set(items.map(item => item.branch).filter(Boolean))];
+      const subtotal = items.reduce((sum,item) => sum + Number(item.lineTotal || 0), 0);
 
       const orderRef = f.fs.doc(f.db, 'orders', number);
       const payload = {
@@ -18202,6 +18249,9 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
         specialRequests:items.filter(item => item.isSpecial),
         note,
         delivery,
+        subtotal,
+        total:subtotal,
+        totalAmount:subtotal,
         itemCount:items.length,
         totalQuantity:items.reduce((sum,item) => sum + item.quantity, 0),
         status:'pending',
@@ -18495,5 +18545,550 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
       refreshCreatedDate(true);
     }
   });
+})();
+</script>
+
+
+<!-- LINKO_PRE_AUDIT_PHASE3_20260819 -->
+<style id="linkoPreAuditPhase3Styles">
+.linko-live-price{
+  display:flex!important;align-items:center;justify-content:space-between;gap:6px;
+  margin:8px 0 7px;padding:7px 9px;border-radius:13px;
+  background:#ecfdf3;border:1px solid #bbf7d0;color:#047857;font-weight:900;font-size:12px
+}
+.linko-live-price small{font-size:9px!important;color:#047857!important;font-weight:900!important}
+.linko-cart-price{
+  margin-top:5px;font-size:11px;font-weight:900;color:#047857;line-height:1.7
+}
+#cartSubtotal,#cartTotal{display:inline!important}
+.summary-box .sum-row.total{display:flex!important}
+#addProductMeta.linko-price-meta{
+  display:block!important;margin-top:4px!important;color:#047857!important;font-weight:900!important;font-size:13px!important
+}
+.linko-order-estimated-total{margin-top:7px;color:#047857;font-weight:900}
+.linko-order-progress-note{
+  margin-top:10px;padding:9px 10px;border-radius:14px;font-size:11px;font-weight:900;line-height:1.7;
+  background:#fff7ed;border:1px solid #fed7aa;color:#9a3412
+}
+.linko-order-progress-note.ok{background:#ecfdf3;border-color:#86efac;color:#166534}
+.linko-order-progress-note.info{background:#eff6ff;border-color:#bfdbfe;color:#1e40af}
+.linko-order-progress-note.bad{background:#fef2f2;border-color:#fecaca;color:#991b1b}
+.linko-order-rating-done{
+  margin-top:9px;padding:10px;border-radius:14px;background:#fffbeb;border:1px solid #fde68a;color:#92400e;
+  display:grid;gap:3px;font-weight:900
+}
+.linko-order-rating-done small{color:#92400e!important;line-height:1.6!important}
+.linko-rate-order-btn{margin-top:9px!important;min-height:44px!important}
+.linko-rating-modal{
+  position:fixed;inset:0;z-index:16000;display:none;align-items:center;justify-content:center;
+  background:rgba(2,6,23,.68);backdrop-filter:blur(8px);padding:16px
+}
+.linko-rating-modal.show{display:flex}
+.linko-rating-card{
+  width:min(460px,96vw);background:#fff;color:#0f172a;border-radius:28px;padding:19px;
+  box-shadow:0 30px 90px rgba(0,0,0,.28);text-align:center
+}
+.linko-rating-card h3{font-size:21px;font-weight:900;margin-bottom:5px}
+.linko-rating-card p{color:#64748b;font-size:12px;font-weight:800;line-height:1.7}
+.linko-rating-stars{display:flex;direction:ltr;justify-content:center;gap:5px;margin:14px 0}
+.linko-rating-star{width:46px;height:46px;border-radius:15px;background:#f8fafc;border:1px solid #e2e8f0;font-size:27px;color:#cbd5e1}
+.linko-rating-star.on{color:#f59e0b;background:#fffbeb;border-color:#fde68a}
+.linko-rating-card textarea{
+  width:100%;min-height:82px;border:1px solid #cbd5e1;border-radius:16px;padding:11px;font:inherit;resize:vertical
+}
+.linko-rating-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:11px}
+body.linko-dark .linko-live-price,body.linko-dark .linko-cart-price{color:#86efac}
+body.linko-dark .linko-live-price{background:#052e22;border-color:#166534}
+body.linko-dark #addProductMeta.linko-price-meta{color:#86efac!important}
+body.linko-dark .linko-rating-card{background:#0f172a;color:#fff}
+body.linko-dark .linko-rating-card p{color:#cbd5e1}
+body.linko-dark .linko-rating-card textarea{background:#111827;color:#fff;border-color:#334155}
+</style>
+
+<div class="linko-rating-modal" id="linkoRatingModal" aria-hidden="true">
+  <div class="linko-rating-card">
+    <h3>تقييم الطلب والمندوب</h3>
+    <p>اختر من نجمة إلى خمس نجوم، ويمكنك كتابة ملاحظة اختيارية.</p>
+    <div class="linko-rating-stars" id="linkoRatingStars">
+      <button class="linko-rating-star" type="button" data-stars="1">★</button>
+      <button class="linko-rating-star" type="button" data-stars="2">★</button>
+      <button class="linko-rating-star" type="button" data-stars="3">★</button>
+      <button class="linko-rating-star" type="button" data-stars="4">★</button>
+      <button class="linko-rating-star" type="button" data-stars="5">★</button>
+    </div>
+    <textarea id="linkoRatingComment" placeholder="ملاحظة عن الطلب أو المندوب (اختياري)"></textarea>
+    <div class="linko-rating-actions">
+      <button class="btn secondary" type="button" onclick="linkoCloseOrderRating()">إلغاء</button>
+      <button class="btn" id="linkoSaveRatingBtn" type="button" onclick="linkoSaveOrderRating()">حفظ التقييم</button>
+    </div>
+  </div>
+</div>
+
+<script id="linkoPreAuditPriceSessionRatingRuntime">
+(function(){
+  'use strict';
+  if(window.__linkoPreAuditPriceSessionRatingRuntime)return;
+  window.__linkoPreAuditPriceSessionRatingRuntime=true;
+
+  const CFG={
+    apiKey:'AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA',
+    authDomain:'medina-bazaar-e2c18.firebaseapp.com',
+    projectId:'medina-bazaar-e2c18',
+    storageBucket:'medina-bazaar-e2c18.firebasestorage.app',
+    messagingSenderId:'375693456199',
+    appId:'1:375693456199:web:2b36e0368ed898a7a11262'
+  };
+  const CONTROLS='productControls';
+  const ORDERS='orders';
+  let fbPromise=null,priceUnsub=null,memberSessionUnsub=null;
+  let savedPrices=new Map(),memberRefreshDirty=false,sessionDisabled=false;
+  let ratingOrderId='',ratingStars=0;
+
+  function clean(v){return String(v==null?'':v).trim();}
+  function esc(v){return clean(v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
+  function toastSafe(v){try{if(typeof toast==='function')toast(v);else alert(v)}catch(e){}}
+  function productRows(){try{return Array.isArray(products)?products:[]}catch(e){return []}}
+  function currentCart(){try{return Array.isArray(cart)?cart:[]}catch(e){try{return JSON.parse(localStorage.getItem('lm_cart')||'[]')}catch(_){return []}}}
+  function money(v){return Math.max(0,Number(v||0)||0).toLocaleString('ar-IQ')+' د.ع'}
+  function productById(id){return productRows().find(function(p){return String(p.id)===String(id)})||null}
+
+  const PRICE_RULES={
+    market:[1000,500,15],meat:[5000,1000,15],produce:[1000,500,12],bakery:[500,500,10],
+    restaurants:[3000,1000,16],furniture:[15000,5000,18],fashion:[5000,2500,18],beauty:[4000,2500,18],
+    smoke:[1500,1000,15],electronics:[10000,7500,20],homebuild:[5000,5000,20],vehicles:[15000,10000,20],
+    gifts:[2000,2000,18],contracting:[25000,15000,20],linko:[25000,10000,15]
+  };
+  function productIndex(p){
+    const m=String(p&&p.id||'').match(/_(\d+)$/);
+    return m?Number(m[1]):0;
+  }
+  function defaultPrice(p){
+    const branch=String(p&&p.branch||'market');
+    const r=PRICE_RULES[branch]||[2000,1000,20];
+    const i=productIndex(p);
+    return r[0]+((i*7+3)%r[2])*r[1];
+  }
+  function ensurePrices(){
+    productRows().forEach(function(p){
+      const id=String(p.id||'');
+      if(savedPrices.has(id))p.price=savedPrices.get(id);
+      else if(!(Number(p.price)>0))p.price=defaultPrice(p);
+    });
+  }
+
+  async function firebase(){
+    if(fbPromise)return fbPromise;
+    fbPromise=Promise.all([
+      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),
+      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')
+    ]).then(function(mods){
+      const appMod=mods[0],fs=mods[1];
+      const app=appMod.getApps().length?appMod.getApps()[0]:appMod.initializeApp(CFG);
+      return {db:fs.getFirestore(app),fs:fs};
+    });
+    return fbPromise;
+  }
+
+  function saveCartPrices(){
+    try{
+      const rows=currentCart();
+      let changed=false;
+      rows.forEach(function(x){
+        if(x.isSpecial)return;
+        const p=productById(x.id);
+        if(p&&Number(x.price)!==Number(p.price)){x.price=Number(p.price||0);changed=true}
+      });
+      if(changed){
+        try{if(typeof cart!=='undefined'&&Array.isArray(cart)){cart=rows}}catch(e){}
+        localStorage.setItem('lm_cart',JSON.stringify(rows));
+      }
+    }catch(e){}
+  }
+
+  function productIdFromCard(card){
+    if(!card)return '';
+    let id=card.getAttribute('data-product-id')||'';
+    if(id)return id;
+    const btn=card.querySelector('button[onclick*="openAddProductModal"],button[onclick*="addToCart"]');
+    const on=btn&&btn.getAttribute('onclick')||'';
+    const m=on.match(/(?:openAddProductModal|addToCart)\(['"]([^'"]+)['"]/);
+    return m?m[1]:'';
+  }
+  function decorateProducts(){
+    ensurePrices();
+    ['productsGrid','branchProductsGrid'].forEach(function(rootId){
+      const root=document.getElementById(rootId);if(!root)return;
+      root.querySelectorAll('.product-card').forEach(function(card){
+        const id=productIdFromCard(card),p=productById(id);if(!p)return;
+        const body=card.querySelector('.product-body')||card;
+        let row=card.querySelector('.linko-live-price');
+        if(!row){
+          row=document.createElement('div');row.className='linko-live-price';
+          const priceRow=body.querySelector('.price-row');
+          if(priceRow)body.insertBefore(row,priceRow);else body.appendChild(row);
+        }
+        row.innerHTML='<span>'+money(p.price)+'</span><small>سعر الوحدة</small>';
+      });
+    });
+  }
+  function decorateCart(){
+    ensurePrices();saveCartPrices();
+    const rows=currentCart(),cards=document.querySelectorAll('#cartList .cart-item');
+    let subtotal=0;
+    cards.forEach(function(card,index){
+      const x=rows[index];if(!x)return;
+      const p=x.isSpecial?null:productById(x.id);
+      const price=x.isSpecial?0:Number((p&&p.price)||x.price||0);
+      const qty=Math.max(1,Number(x.qty||x.quantity||1)||1);
+      subtotal+=price*qty;
+      let line=card.querySelector('.linko-cart-price');
+      if(!line){line=document.createElement('div');line.className='linko-cart-price';const middle=card.children[1]||card;middle.appendChild(line)}
+      line.textContent=x.isSpecial?'السعر يحدد بعد المراجعة':('سعر الوحدة: '+money(price)+' — المجموع: '+money(price*qty));
+    });
+    const sub=document.getElementById('cartSubtotal'),total=document.getElementById('cartTotal');
+    if(sub)sub.textContent=money(subtotal);
+    if(total)total.textContent=money(subtotal);
+  }
+  function updateAddModalPrice(id){
+    const p=productById(id),meta=document.getElementById('addProductMeta');
+    if(!p||!meta)return;
+    meta.classList.add('linko-price-meta');
+    meta.textContent='السعر: '+money(p.price)+' للوحدة';
+  }
+
+  function wrapRender(name,after){
+    const old=window[name];
+    if(typeof old!=='function'||old.__linkoPriceWrapped)return;
+    const wrapped=function(){
+      const r=old.apply(this,arguments);
+      setTimeout(after,0);
+      return r;
+    };
+    wrapped.__linkoPriceWrapped=true;
+    window[name]=wrapped;
+  }
+
+  async function setPrice(id,value){
+    const p=productById(id);if(!p)throw new Error('PRODUCT_NOT_FOUND');
+    const price=Math.max(0,Math.round(Number(value)||0));
+    if(price<=0)throw new Error('INVALID_PRICE');
+    const previous=Number(p.price||0);
+    p.price=price;savedPrices.set(String(id),price);memberRefreshDirty=true;
+    saveCartPrices();
+    try{
+      const f=await firebase();
+      await f.fs.setDoc(f.fs.doc(f.db,CONTROLS,encodeURIComponent(String(id))),{
+        productId:String(id),price:price,updatedAt:f.fs.serverTimestamp()
+      },{merge:true});
+      return price;
+    }catch(error){
+      p.price=previous;
+      if(previous>0)savedPrices.set(String(id),previous);else savedPrices.delete(String(id));
+      throw error;
+    }
+  }
+
+  function extendProductAPI(){
+    ensurePrices();
+    const current=window.__linkoStage6ProductAvailabilityAPI||{};
+    if(current.__linkoPriceAPI)return;
+    const oldList=typeof current.list==='function'?current.list.bind(current):null;
+    const next=Object.assign({},current);
+    next.list=function(){
+      ensurePrices();
+      const base=oldList?oldList():productRows().map(function(p){return {id:String(p.id),name:p.name,branchId:p.branch,status:p.status}});
+      return base.map(function(row){
+        const p=productById(row.id);
+        return Object.assign({},row,{price:Number((p&&p.price)||defaultPrice(p||row)||0)});
+      });
+    };
+    next.setPrice=setPrice;
+    next.__linkoPriceAPI=true;
+    window.__linkoStage6ProductAvailabilityAPI=next;
+  }
+
+  function refreshMemberPriceUI(){
+    ensurePrices();saveCartPrices();
+    try{if(typeof renderProducts==='function')renderProducts()}catch(e){}
+    try{
+      const page=document.getElementById('branchPage');
+      if(page&&page.classList.contains('active')&&typeof renderBranchProducts==='function')renderBranchProducts();
+    }catch(e){}
+    try{if(typeof renderCart==='function')renderCart()}catch(e){}
+    decorateProducts();decorateCart();
+    memberRefreshDirty=false;
+  }
+
+  async function startPriceListener(){
+    try{
+      const f=await firebase();
+      if(priceUnsub)priceUnsub();
+      priceUnsub=f.fs.onSnapshot(f.fs.collection(f.db,CONTROLS),function(snapshot){
+        let changed=false;
+        snapshot.forEach(function(doc){
+          const d=doc.data()||{};
+          if(!(Number(d.price)>0))return;
+          const id=String(d.productId||decodeURIComponent(doc.id));
+          const value=Math.round(Number(d.price));
+          if(savedPrices.get(id)!==value){savedPrices.set(id,value);changed=true}
+        });
+        if(changed){
+          ensurePrices();saveCartPrices();extendProductAPI();
+          const admin=document.getElementById('linkoAdminShell');
+          if(admin&&admin.classList.contains('show'))memberRefreshDirty=true;
+          else refreshMemberPriceUI();
+        }
+        injectAdminPriceEditor();
+      },function(err){console.warn('LINKO product prices listener failed',err)});
+    }catch(e){console.warn('LINKO product prices Firebase init failed',e)}
+  }
+
+  // Product modal price + final render wrappers.
+  ensurePrices();
+  wrapRender('renderProducts',decorateProducts);
+  wrapRender('renderBranchProducts',decorateProducts);
+  wrapRender('renderCart',decorateCart);
+  const oldOpenAdd=window.openAddProductModal;
+  if(typeof oldOpenAdd==='function'&&!oldOpenAdd.__linkoPriceWrapped){
+    const wrapped=function(id){
+      const r=oldOpenAdd.apply(this,arguments);
+      setTimeout(function(){updateAddModalPrice(id)},20);
+      return r;
+    };
+    wrapped.__linkoPriceWrapped=true;
+    window.openAddProductModal=wrapped;
+  }
+
+  // Admin closes -> refresh member cards once, not continuously.
+  const oldClose=window.linkoCloseAdmin;
+  if(typeof oldClose==='function'){
+    window.linkoCloseAdmin=function(){
+      const r=oldClose.apply(this,arguments);
+      if(memberRefreshDirty)setTimeout(refreshMemberPriceUI,60);
+      return r;
+    };
+  }
+
+  function adminSource(){
+    return '('+function(){
+      'use strict';
+      if(window.__linkoPriceAdminFrame)return;
+      window.__linkoPriceAdminFrame=true;
+      function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
+      function api(){try{return parent.__linkoStage6ProductAvailabilityAPI||null}catch(e){return null}}
+      function rows(){const a=api();try{return a&&typeof a.list==='function'?a.list():[]}catch(e){return []}}
+      function money(v){return Math.max(0,Number(v||0)||0).toLocaleString('ar-IQ')+' د.ع'}
+      function msg(v){try{if(typeof toast==='function')toast(v);else alert(v)}catch(e){}}
+      function currentSearch(){return String(window.__linkoStage6ProductSearch||'')}
+      window.linkoStage6FilterProducts=function(value){
+        window.__linkoStage6ProductSearch=String(value||'');
+        const q=window.__linkoStage6ProductSearch.trim().toLowerCase();
+        document.querySelectorAll('[data-linko-stage6-product-card]').forEach(function(card){
+          const text=String(card.getAttribute('data-search')||'').toLowerCase();
+          card.style.display=!q||text.indexOf(q)!==-1?'':'none';
+        });
+      };
+      window.products=function(){
+        const all=rows(),q=currentSearch();
+        const cards=all.map(function(p){
+          const unavailable=p.status==='unavailable'||p.status==='غير متوفر';
+          const search=[p.name,p.branchName,money(p.price),unavailable?'غير متوفر':'متوفر'].join(' ');
+          return '<div class="product-card" data-linko-stage6-product-card data-product-id="'+esc(p.id)+'" data-search="'+esc(search)+'">'
+            +'<div class="product-img"><span class="material-symbols-rounded">shopping_cart</span></div>'
+            +'<div><h3>'+esc(p.name)+'</h3><p class="muted">'+esc(p.branchName||'-')+'</p>'
+            +'<p style="margin-top:5px;font-weight:900;color:#047857">'+esc(money(p.price))+'</p>'
+            +'<span class="status '+(unavailable?'bad':'ok')+'">'+(unavailable?'غير متوفر':'متوفر')+'</span></div>'
+            +'<div class="actions-row">'
+            +'<button class="btn secondary mini" type="button" onclick="linkoPriceEditName(\''+esc(p.id)+'\')">تعديل الاسم</button>'
+            +'<button class="btn blue mini" type="button" onclick="linkoPriceEditPrice(\''+esc(p.id)+'\')">تعديل السعر</button>'
+            +'<button class="btn '+(unavailable?'':'warn')+' mini" type="button" onclick="linkoPriceToggleStatus(\''+esc(p.id)+'\',\''+(unavailable?'available':'unavailable')+'\')">'+(unavailable?'جعله متوفر':'جعله غير متوفر')+'</button>'
+            +'</div></div>';
+        }).join('');
+        setTimeout(function(){window.linkoStage6FilterProducts(q)},0);
+        return '<div class="panel"><div class="panel-head"><div><h2>إدارة المنتجات</h2>'
+          +'<p>تعديل اسم المنتج والسعر وحالة التوفر. الصور تدار من فريق LINKO.</p></div></div>'
+          +'<div class="tools"><input class="input" id="prodSearch" value="'+esc(q)+'" oninput="linkoStage6FilterProducts(this.value)" placeholder="بحث عن منتج أو فرع أو سعر"></div>'
+          +'<div class="cards">'+(cards||'<div class="empty">لا توجد منتجات</div>')+'</div></div>';
+      };
+      window.linkoPriceEditName=function(id){
+        const p=rows().find(function(x){return String(x.id)===String(id)}),a=api();
+        if(!p||!a||typeof a.setName!=='function')return msg('تعذر ربط اسم المنتج');
+        openModal('تعديل اسم المنتج','<div class="field"><label>اسم المنتج</label><input class="input" id="linkoPriceNameInput" value="'+esc(p.name)+'"></div><button class="btn wide" type="button" onclick="linkoPriceSaveName(\''+esc(id)+'\',this)">حفظ الاسم</button>');
+      };
+      window.linkoPriceSaveName=async function(id,button){
+        const a=api(),input=document.getElementById('linkoPriceNameInput'),name=String(input&&input.value||'').trim();
+        if(!name)return msg('اكتب اسم المنتج');
+        const old=button.textContent;button.disabled=true;button.textContent='جاري الحفظ...';
+        try{await a.setName(id,name);if(typeof closeModal==='function')closeModal();msg('تم حفظ اسم المنتج');render()}
+        catch(e){console.error(e);msg('تعذر حفظ الاسم');button.disabled=false;button.textContent=old}
+      };
+      window.linkoPriceEditPrice=function(id){
+        const p=rows().find(function(x){return String(x.id)===String(id)}),a=api();
+        if(!p||!a||typeof a.setPrice!=='function')return msg('تعذر ربط سعر المنتج');
+        openModal('تعديل سعر المنتج','<div class="field"><label>السعر بالدينار العراقي</label><input class="input" id="linkoPriceValueInput" type="number" inputmode="numeric" min="1" step="250" value="'+esc(String(p.price||0))+'"></div><button class="btn wide" type="button" onclick="linkoPriceSaveValue(\''+esc(id)+'\',this)">حفظ السعر</button>');
+        setTimeout(function(){const i=document.getElementById('linkoPriceValueInput');if(i){i.focus();i.select()}},30);
+      };
+      window.linkoPriceSaveValue=async function(id,button){
+        const a=api(),input=document.getElementById('linkoPriceValueInput'),price=Math.round(Number(input&&input.value||0));
+        if(!(price>0))return msg('اكتب سعراً صحيحاً');
+        const old=button.textContent;button.disabled=true;button.textContent='جاري الحفظ...';
+        try{await a.setPrice(id,price);if(typeof closeModal==='function')closeModal();msg('تم حفظ سعر المنتج');render()}
+        catch(e){console.error(e);msg('تعذر حفظ السعر');button.disabled=false;button.textContent=old}
+      };
+      window.linkoPriceToggleStatus=async function(id,next){
+        const a=api();if(!a||typeof a.setStatus!=='function')return msg('تعذر ربط حالة المنتج');
+        try{await a.setStatus(id,next);msg(next==='unavailable'?'تم جعل المنتج غير متوفر':'تم جعل المنتج متوفر');render()}
+        catch(e){console.error(e);msg('تعذر حفظ حالة المنتج')}
+      };
+      try{if(typeof active!=='undefined'&&active==='products'&&typeof render==='function')render()}catch(e){}
+    }.toString()+')();';
+  }
+
+  function injectAdminPriceEditor(){
+    extendProductAPI();
+    const fr=document.getElementById('linkoAdminFrame');
+    if(!fr||!fr.contentDocument||!fr.contentDocument.body)return false;
+    try{
+      const w=fr.contentWindow,doc=fr.contentDocument;
+      if(!w.__linkoPriceAdminFrame){
+        const sc=doc.createElement('script');sc.textContent=adminSource();doc.body.appendChild(sc);
+      }else if(typeof w.active!=='undefined'&&w.active==='products'&&typeof w.render==='function'){
+        w.render();
+      }
+      return true;
+    }catch(e){return false}
+  }
+
+  // ---------- Persistent member session ----------
+  function savedMember(){
+    for(const key of ['linko_current_member','lm_current_user']){
+      try{const u=JSON.parse(localStorage.getItem(key)||'null');if(u)return u}catch(e){}
+    }
+    return null;
+  }
+  function memberId(u){u=u||{};return clean(u.firebaseId||u.memberId||u.docId||u.id)}
+  function activeMember(u){
+    const st=clean(u&&u.status).toLowerCase();
+    return !(u&&u.deleted)&&!['deleted','removed','stopped','inactive','blocked','rejected','موقوف','محذوف','مرفوض'].includes(st);
+  }
+  function saveMember(u){
+    if(!u)return;
+    try{window.currentUser=u}catch(e){}
+    try{currentUser=u}catch(e){}
+    try{localStorage.setItem('linko_current_member',JSON.stringify(u));localStorage.setItem('lm_current_user',JSON.stringify(u))}catch(e){}
+  }
+  function clearSavedMember(){
+    try{localStorage.removeItem('linko_current_member');localStorage.removeItem('lm_current_user')}catch(e){}
+    try{window.currentUser=null}catch(e){}
+    try{currentUser=null}catch(e){}
+  }
+  function showSavedMember(u){
+    if(!u||sessionDisabled)return;
+    saveMember(u);
+    try{if(typeof fillUser==='function')fillUser()}catch(e){}
+    try{if(typeof go==='function')go('homePage')}catch(e){}
+  }
+  async function verifySavedMember(u){
+    const id=memberId(u);if(!id||sessionDisabled)return;
+    try{
+      const f=await firebase();
+      if(memberSessionUnsub)memberSessionUnsub();
+      memberSessionUnsub=f.fs.onSnapshot(f.fs.doc(f.db,'members',id),function(snap){
+        if(sessionDisabled)return;
+        if(!snap.exists()){clearSavedMember();try{go('authPage')}catch(e){};return}
+        const d=Object.assign({},u,snap.data()||{},{
+          id:id,firebaseId:id,memberId:id,docId:id
+        });
+        if(!activeMember(d)){clearSavedMember();toastSafe('تم إيقاف الحساب من الإدارة');try{go('authPage')}catch(e){};return}
+        saveMember(d);
+        try{if(typeof fillUser==='function')fillUser()}catch(e){}
+      },function(err){console.warn('LINKO saved member session verify skipped',err)});
+    }catch(e){console.warn('LINKO saved member session Firebase init skipped',e)}
+  }
+  function resumeMemberSession(){
+    if(sessionDisabled)return;
+    const u=savedMember();if(!u)return;
+    showSavedMember(u);verifySavedMember(u);
+  }
+  const oldLogoutFinal=window.logout;
+  if(typeof oldLogoutFinal==='function'){
+    window.logout=function(){
+      sessionDisabled=true;
+      try{if(memberSessionUnsub){memberSessionUnsub();memberSessionUnsub=null}}catch(e){}
+      clearSavedMember();
+      return oldLogoutFinal.apply(this,arguments);
+    };
+  }
+  const oldLoginFinal=window.login;
+  if(typeof oldLoginFinal==='function'){
+    window.login=async function(){
+      sessionDisabled=false;
+      const r=await oldLoginFinal.apply(this,arguments);
+      setTimeout(function(){const u=savedMember();if(u)verifySavedMember(u)},250);
+      return r;
+    };
+  }
+
+  // ---------- Rating ----------
+  function setRatingStars(value){
+    ratingStars=Math.max(1,Math.min(5,Number(value)||1));
+    document.querySelectorAll('#linkoRatingStars .linko-rating-star').forEach(function(btn){
+      btn.classList.toggle('on',Number(btn.getAttribute('data-stars'))<=ratingStars);
+    });
+  }
+  document.querySelectorAll('#linkoRatingStars .linko-rating-star').forEach(function(btn){
+    btn.addEventListener('click',function(){setRatingStars(btn.getAttribute('data-stars'))});
+  });
+  window.linkoOpenOrderRating=function(id){
+    ratingOrderId=String(id||'');ratingStars=0;
+    document.getElementById('linkoRatingComment').value='';
+    document.querySelectorAll('#linkoRatingStars .linko-rating-star').forEach(function(btn){btn.classList.remove('on')});
+    const modal=document.getElementById('linkoRatingModal');modal.classList.add('show');modal.setAttribute('aria-hidden','false');
+  };
+  window.linkoCloseOrderRating=function(){
+    const modal=document.getElementById('linkoRatingModal');modal.classList.remove('show');modal.setAttribute('aria-hidden','true');
+  };
+  window.linkoSaveOrderRating=async function(){
+    if(!ratingOrderId)return;
+    if(!ratingStars){toastSafe('اختر عدد النجوم أولاً');return}
+    const button=document.getElementById('linkoSaveRatingBtn'),old=button.textContent;
+    button.disabled=true;button.textContent='جاري الحفظ...';
+    try{
+      const u=savedMember(),uid=memberId(u);if(!uid)throw new Error('NO_MEMBER');
+      const f=await firebase(),ref=f.fs.doc(f.db,ORDERS,ratingOrderId),snap=await f.fs.getDoc(ref);
+      if(!snap.exists())throw new Error('ORDER_NOT_FOUND');
+      const order=snap.data()||{};
+      if(clean(order.memberId)!==uid)throw new Error('NOT_YOUR_ORDER');
+      if(clean(order.status).toLowerCase()!=='delivered')throw new Error('NOT_DELIVERED');
+      await f.fs.updateDoc(ref,{
+        memberRating:ratingStars,
+        memberRatingComment:clean(document.getElementById('linkoRatingComment').value),
+        ratingDriverId:clean(order.driverId),
+        ratingDriverName:clean(order.driverName),
+        ratedAt:f.fs.serverTimestamp(),
+        updatedAt:f.fs.serverTimestamp()
+      });
+      window.linkoCloseOrderRating();toastSafe('شكراً، تم حفظ تقييمك');
+    }catch(e){
+      console.error('LINKO order rating failed',e);
+      toastSafe('تعذر حفظ التقييم حالياً');
+    }finally{button.disabled=false;button.textContent=old}
+  };
+
+  // Initial safe startup, no static external resource.
+  function boot(){
+    ensurePrices();extendProductAPI();decorateProducts();decorateCart();
+    injectAdminPriceEditor();
+    resumeMemberSession();
+    startPriceListener();
+    const fr=document.getElementById('linkoAdminFrame');
+    if(fr&&!fr.__linkoPriceAdminLoad){
+      fr.__linkoPriceAdminLoad=true;
+      fr.addEventListener('load',function(){setTimeout(injectAdminPriceEditor,100);setTimeout(injectAdminPriceEditor,450)});
+    }
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
+  setTimeout(function(){extendProductAPI();injectAdminPriceEditor();decorateProducts();decorateCart()},500);
+  setTimeout(function(){extendProductAPI();injectAdminPriceEditor()},1400);
 })();
 </script>
