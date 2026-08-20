@@ -10768,7 +10768,7 @@ if(form) form.reset();
       async function start(){
         try{
           const f=await firebase();
-          f.fs.onSnapshot(f.fs.collection(f.db,'orders'),function(snapshot){
+          parent.__linkoCatalogControlHub.subscribe(f,'orders',function(snapshot){
             const map=new Map();
             snapshot.forEach(function(docSnap){ map.set(docSnap.id,Object.assign({id:docSnap.id},docSnap.data()||{})); });
             rows=Array.from(map.values());
@@ -11097,7 +11097,7 @@ if(form) form.reset();
       async function start(){
         try{
           const f = await firebase();
-          f.fs.onSnapshot(f.fs.collection(f.db,'orders'),function(snapshot){
+          parent.__linkoCatalogControlHub.subscribe(f,'orders',function(snapshot){
             const map = new Map();
             snapshot.forEach(function(docSnap){ map.set(docSnap.id,Object.assign({id:docSnap.id},docSnap.data() || {})); });
             orders = Array.from(map.values());
@@ -15710,7 +15710,7 @@ transform-origin:center center!important;
       async function start(){
         try{
           const f = await firebase();
-          f.fs.onSnapshot(f.fs.collection(f.db,'orders'),function(snapshot){
+          parent.__linkoCatalogControlHub.subscribe(f,'orders',function(snapshot){
             const map = new Map();
             snapshot.forEach(function(docSnap){
               map.set(docSnap.id,Object.assign({id:docSnap.id},docSnap.data() || {}));
@@ -17960,7 +17960,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
       async function start(){
         try{
           const f = await firebase();
-          f.fs.onSnapshot(f.fs.collection(f.db,'orders'),function(snapshot){
+          parent.__linkoCatalogControlHub.subscribe(f,'orders',function(snapshot){
             liveOrders = snapshot.docs.map(function(docSnap){ return Object.assign({id:docSnap.id},docSnap.data() || {}); });
             ordersReady = true; refreshOpenSection();
           },function(error){ console.warn('LINKO authoritative orders count failed',error); ordersReady = true; refreshOpenSection(); });
