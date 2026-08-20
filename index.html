@@ -1,5 +1,6 @@
 <!DOCTYPE html>
-<!-- LINKO FOUNDATION PHASE 2C: SHARED MEMBERS COLLECTION LISTENER 20260820 -->
+<!-- LINKO FOUNDATION PHASE 2D: SHARED NOTIFICATIONS + CHANGE REQUEST LISTENERS 20260820 -->
+<!-- Based on tested Phase 2C -->
 
 <!-- MEDINA_BUILD_V71_STARTUP_GUARD_20260804 -->
 <!-- LINKO_DELIVERY_LOCATION_PHASE1_FIX_LAZY_MAP_20260819 -->
@@ -4862,14 +4863,14 @@ initTheme();buildNav();render();
       async function start(){
         try{
           const f = await firebase();
-          f.fs.onSnapshot(f.fs.collection(f.db,MEMBERS_COLLECTION),function(snapshot){
+          parent.__linkoCatalogControlHub.subscribe(f,MEMBERS_COLLECTION,function(snapshot){
             memberRows = snapshot.docs.map(function(doc){
               const data = doc.data() || {};
               return {id:doc.id,name:clean(data.name || data.username || data.fullName),phone:clean(data.phone),code:clean(data.code || data.password || data.pin)};
             }).filter(function(row){ return !!row.name; });
             safeRender();
           });
-          f.fs.onSnapshot(f.fs.collection(f.db,NOTIFICATIONS_COLLECTION),function(snapshot){
+          parent.__linkoCatalogControlHub.subscribe(f,NOTIFICATIONS_COLLECTION,function(snapshot){
             notificationRows = snapshot.docs.map(function(doc){ return Object.assign({id:doc.id},doc.data() || {}); })
               .sort(function(a,b){
                 const at = Number(a.clientCreatedAtMs || (a.createdAt &amp;&amp; a.createdAt.seconds*1000) || 0);
@@ -7908,7 +7909,7 @@ if(form) form.reset();
       async function notifyMember(f, r, approved){ await f.fs.addDoc(f.fs.collection(f.db, NOTIFICATIONS_COLLECTION), {memberId:r.memberId||'', memberName:r.memberName||'', memberCode:r.memberCode||'', title: approved?'تم قبول طلبك':'تم رفض طلبك', text: approved?('تم قبول '+(r.type||'طلب التعديل')):('تم رفض '+(r.type||'طلب التعديل')), requestId:r.id, status:'unread', kind:approved?'ok':'pending', createdAt:f.fs.serverTimestamp()}); }
       window.approveAdminRequest = async function(id){ if(busy.has(String(id))) return; busy.add(String(id)); try{ const r=rows.find(x=>String(x.id)===String(id)); if(!r){msg('لم يتم العثور على الطلب');return;} const f=await fb(); const memRef=await findMemberRef(f,r); if(!memRef){msg('لم يتم العثور على العضو');return;} const payload=updatePayload(r); payload.updatedAt=f.fs.serverTimestamp(); await f.fs.updateDoc(memRef,payload); await f.fs.updateDoc(f.fs.doc(f.db,CHANGE_COLLECTION,r.id),{status:'approved',approvedAt:f.fs.serverTimestamp()}); await notifyMember(f,r,true); msg('تمت الموافقة وتحديث بيانات العضو'); }catch(e){console.error(e); msg('تعذر تنفيذ الموافقة');} finally{busy.delete(String(id));} };
       window.rejectAdminRequest = async function(id){ if(busy.has(String(id))) return; busy.add(String(id)); try{ const r=rows.find(x=>String(x.id)===String(id)); if(!r){msg('لم يتم العثور على الطلب');return;} const f=await fb(); await f.fs.updateDoc(f.fs.doc(f.db,CHANGE_COLLECTION,r.id),{status:'rejected',rejectedAt:f.fs.serverTimestamp()}); await notifyMember(f,r,false); msg('تم رفض الطلب'); }catch(e){console.error(e); msg('تعذر رفض الطلب');} finally{busy.delete(String(id));} };
-      function start(){ if(started) return; started=true; fb().then(function(f){ f.fs.onSnapshot(f.fs.collection(f.db,CHANGE_COLLECTION),function(snap){ rows=snap.docs.map(norm); publish(); },function(err){ console.warn('change requests listener failed',err); msg('تعذر قراءة طلبات التعديل'); }); }).catch(function(e){ console.error(e); msg('تعذر ربط طلبات التعديل'); }); }
+      function start(){ if(started) return; started=true; fb().then(function(f){ parent.__linkoCatalogControlHub.subscribe(f,CHANGE_COLLECTION,function(snap){ rows=snap.docs.map(norm); publish(); },function(err){ console.warn('change requests listener failed',err); msg('تعذر قراءة طلبات التعديل'); }); }).catch(function(e){ console.error(e); msg('تعذر ربط طلبات التعديل'); }); }
       document.addEventListener('click',function(e){ const btn=e.target.closest('[data-phase5-action]'); if(!btn) return; e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); const action=btn.getAttribute('data-phase5-action'), id=btn.getAttribute('data-id'); const old=btn.innerHTML; if(action==='approve'||action==='reject'){btn.disabled=true;btn.innerHTML='<span class="material-symbols-rounded">sync</span> جاري...';} const done=function(){setTimeout(function(){try{btn.disabled=false;btn.innerHTML=old;}catch(e){}},300);}; if(action==='approve') Promise.resolve(window.approveAdminRequest(id)).finally(done); else if(action==='reject') Promise.resolve(window.rejectAdminRequest(id)).finally(done); else if(action==='refresh'){start();publish();msg('تم التحديث');} }, true);
       window.linkoPhase5Refresh = function(){ start(); publish(); };
       start();
@@ -8289,7 +8290,7 @@ if(form) form.reset();
     try{ if(reqUnsub) reqUnsub(); }catch(e){}
     try{
       const f=await fb();
-      reqUnsub=f.fs.onSnapshot(f.fs.collection(f.db,CHANGE_COLLECTION),function(snap){
+      reqUnsub=window.__linkoCatalogControlHub.subscribe(f,CHANGE_COLLECTION,function(snap){
         memberRequestRows=[];
         snap.forEach(function(doc){ const d=doc.data()||{}; if(requestMatchesUser(d,u)) memberRequestRows.push({id:doc.id,type:d.type||d.title,details:d.details||d.newValue,status:d.status||'pending',date:d.date||toDateText(d.createdAt)||toDateText(d.updatedAt)}); });
         renderMemberRequestsClean();
@@ -8317,7 +8318,7 @@ if(form) form.reset();
     try{ if(notifUnsub) notifUnsub(); }catch(e){}
     try{
       const f=await fb();
-      notifUnsub=f.fs.onSnapshot(f.fs.collection(f.db,NOTIFICATIONS_COLLECTION),function(snap){
+      notifUnsub=window.__linkoCatalogControlHub.subscribe(f,NOTIFICATIONS_COLLECTION,function(snap){
         memberNotifRows=[];
         snap.forEach(function(doc){ const d=doc.data()||{}; if(notifMatchesUser(d,u)) memberNotifRows.push({id:doc.id,title:d.title,text:d.text||d.message,kind:d.kind||'info',date:toDateText(d.createdAt)||toDateText(d.time)}); });
         memberNotifRows.sort(function(a,b){return String(b.date).localeCompare(String(a.date));});
@@ -8400,7 +8401,7 @@ if(form) form.reset();
     try{if(notifUnsubFinal)notifUnsubFinal();}catch(e){}
     try{
       const f=await fb();
-      notifUnsubFinal=f.fs.onSnapshot(f.fs.collection(f.db,NOTIFICATIONS_COLLECTION),function(snap){
+      notifUnsubFinal=window.__linkoCatalogControlHub.subscribe(f,NOTIFICATIONS_COLLECTION,function(snap){
         const rows=[]; snap.forEach(function(doc){const d=doc.data()||{}; if(notifMatchesUser(d,u)) rows.push({id:doc.id,title:d.title||'إشعار من الإدارة',text:d.text||d.message||'',kind:d.kind||d.type||'info',date:dateText(d.createdAt)||dateText(d.time)||dateText(d.date),sort:(d.createdAt&&d.createdAt.seconds)||Date.now()});});
         finalNotifs=rows;
         renderNotesFinal();
@@ -9739,7 +9740,7 @@ if(form) form.reset();
 
   /* MEDINA V68: نافذة الرصيد أصبحت مباشرة داخل iframe؛ لا إعادة حقن. */
 })();
-</script><!-- ===== LINKO FOUNDATION PHASE 2A: SHARED FIRESTORE CONTROL LISTENER HUB ===== --><script id="linkoFoundationPhase2AControlHub">
+</script><!-- ===== LINKO FOUNDATION PHASE 2D: SHARED FIRESTORE COLLECTION LISTENER HUB ===== --><script id="linkoFoundationPhase2AControlHub">
 (function(){
   'use strict';
   if(window.__linkoCatalogControlHub) return;
@@ -11855,7 +11856,7 @@ body.linko-dark #linkoUrgentMemberNotificationPopup small{color:#fde68a!importan
     try{if(unsub){unsub();unsub=null;}}catch(e){}
     try{
       const f=await firebase();let initial=true;
-      unsub=f.fs.onSnapshot(f.fs.collection(f.db,'memberNotifications'),function(snap){
+      unsub=window.__linkoCatalogControlHub.subscribe(f,'memberNotifications',function(snap){
         if(initial){initial=false;return;}
         snap.docChanges().forEach(function(ch){
           if(ch.type!=='added')return;
@@ -12165,8 +12166,9 @@ body.linko-dark #linkoUrgentMemberNotificationPopup small{color:#fde68a!importan
     try{
       const f = await firebase();
 
-      notificationUnsub = f.fs.onSnapshot(
-        f.fs.collection(f.db,'memberNotifications'),
+      notificationUnsub = window.__linkoCatalogControlHub.subscribe(
+        f,
+        'memberNotifications',
         function(snapshot){
           const rows = [];
 
