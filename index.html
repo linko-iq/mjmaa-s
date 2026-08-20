@@ -6,7 +6,7 @@
 <!-- LINKO_DELIVERY_LOCATION_PHASE1_FIX_LAZY_MAP_20260819 -->
 <!-- LINKO_DELIVERY_LOCATION_REAL_FIX_20260819 -->
 <!-- LINKO_DRIVER_PHASE2_20260819 -->
-<!-- LINKO_FOUNDATION_PHASE2F_REMAINING_READ_OPTIMIZATION_20260820 -->
+<!-- LINKO_FOUNDATION_PHASE2F_REBUILT_STABLE_20260820 -->
 <!-- LINKO_FOUNDATION_PHASE2A_SHARED_CONTROL_LISTENERS_20260820 -->
 <!-- LINKO SUBSCRIPTION REQUESTS FINAL V48: REAPPLY ON EVERY ADMIN OPEN/FRAME LOAD -->
 <!-- LINKO FOUNDATION PHASE 1A: EXTERNAL MEDIA 20260820 -->
@@ -4213,16 +4213,28 @@ initTheme();buildNav();render();
 
           SUB_COLLECTIONS.forEach(function(col){
             try{
-              parent.__linkoScopedRealtimeHub.subscribePending(f,col,100,function(snap){
+              const ref = f.fs.collection(f.db,col);
+
+              // القراءة الأولى تكون من خادم Firebase نفسه فقط.
+              f.fs.getDocsFromServer(ref).then(function(snap){
                 reqRowsByCol[col] = snap.docs.map(function(d){return normalizeReq(d,col);});
                 publishRequests(false);
-              },function(err){ console.warn(&#x27;subscription pending listen failed&#x27;, col, err); });
+              }).catch(function(err){
+                console.warn(&#x27;subscription server read failed&#x27;, col, err);
+              });
+
+              // بعد ذلك نستقبل التحديثات الحقيقية، ونتجاهل Snapshot الكاش القديم.
+              f.fs.onSnapshot(ref, {includeMetadataChanges:true}, function(snap){
+                if(snap.metadata &amp;&amp; snap.metadata.fromCache) return;
+                reqRowsByCol[col] = snap.docs.map(function(d){return normalizeReq(d,col);});
+                publishRequests(false);
+              }, function(err){ console.warn(&#x27;subscription listen failed&#x27;, col, err); });
             }catch(e){ console.warn(&#x27;subscription setup failed&#x27;, col, e); }
           });
-          parent.__linkoCatalogControlHub.subscribe(f,MEMBERS_COLLECTION,function(snap){
+          f.fs.onSnapshot(f.fs.collection(f.db, MEMBERS_COLLECTION), function(snap){
             memberRows = snap.docs.map(normalizeMember);
             publishMembers(false);
-          },function(err){ console.warn(&#x27;members shared listen failed&#x27;, err); });
+          }, function(err){ console.warn(&#x27;members listen failed&#x27;, err); });
         }catch(e){ console.error(&#x27;Firebase init failed&#x27;, e); msg(&#x27;تعذر ربط Firebase&#x27;); }
       }
       function findReq(id){ return (st().requests || []).find(function(r){ return String(r.id)===String(id) || String(r.firebaseId)===String(id); }); }
@@ -4357,7 +4369,7 @@ initTheme();buildNav();render();
           try{
             const f=await fb();
             const snap=await f.fs.getDocsFromServer(
-              f.fs.query(f.fs.collection(f.db,&#x27;subscriptionRequests&#x27;),f.fs.where(&#x27;status&#x27;,&#x27;==&#x27;,&#x27;pending&#x27;),f.fs.limit(100))
+              f.fs.collection(f.db,&#x27;subscriptionRequests&#x27;)
             );
             reqRowsByCol.subscriptionRequests=snap.docs.map(function(d){
               return normalizeReq(d,&#x27;subscriptionRequests&#x27;);
@@ -4389,7 +4401,7 @@ initTheme();buildNav();render();
           try{
             const f=await fb();
             const snap=await f.fs.getDocsFromServer(
-              f.fs.query(f.fs.collection(f.db,&#x27;subscriptionRequests&#x27;),f.fs.where(&#x27;status&#x27;,&#x27;==&#x27;,&#x27;pending&#x27;),f.fs.limit(100))
+              f.fs.collection(f.db,&#x27;subscriptionRequests&#x27;)
             );
             reqRowsByCol.subscriptionRequests=snap.docs.map(function(d){
               return normalizeReq(d,&#x27;subscriptionRequests&#x27;);
@@ -4859,7 +4871,7 @@ initTheme();buildNav();render();
             }).filter(function(row){ return !!row.name; });
             safeRender();
           });
-          parent.__linkoScopedRealtimeHub.subscribeRecent(f,NOTIFICATIONS_COLLECTION,100,function(snapshot){
+          parent.__linkoCatalogControlHub.subscribe(f,NOTIFICATIONS_COLLECTION,function(snapshot){
             notificationRows = snapshot.docs.map(function(doc){ return Object.assign({id:doc.id},doc.data() || {}); })
               .sort(function(a,b){
                 const at = Number(a.clientCreatedAtMs || (a.createdAt &amp;&amp; a.createdAt.seconds*1000) || 0);
@@ -5564,6 +5576,23 @@ initTheme();buildNav();render();
     }
   };
 
+  function medinaV68ConfirmDeleteMember(member){
+    return new Promise(function(resolve){
+      const old=document.getElementById(&#x27;medinaV68DeleteConfirm&#x27;);
+      if(old) old.remove();
+      const overlay=document.createElement(&#x27;div&#x27;);
+      overlay.id=&#x27;medinaV68DeleteConfirm&#x27;;
+      overlay.style.cssText=&#x27;position:fixed;inset:0;z-index:1000000;background:rgba(15,23,42,.58);display:flex;align-items:center;justify-content:center;padding:18px;direction:rtl&#x27;;
+      overlay.innerHTML=&#x27;&lt;div style=&quot;width:min(430px,96vw);background:#fff;color:#111827;border-radius:22px;padding:18px;box-shadow:0 28px 90px rgba(0,0,0,.35)&quot;&gt;&lt;h3 style=&quot;margin:0 0 8px;font-size:20px;font-weight:900&quot;&gt;تأكيد حذف العضو&lt;/h3&gt;&lt;p style=&quot;margin:0;color:#64748b;font-weight:800;line-height:1.8&quot;&gt;سيتم حذف &lt;b&gt;&#x27;+esc(member.name||member.username||&#x27;العضو&#x27;)+&#x27;&lt;/b&gt; من قائمة الأعضاء وإيقاف حسابه.&lt;/p&gt;&lt;div style=&quot;display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:16px&quot;&gt;&lt;button type=&quot;button&quot; id=&quot;medinaV68DeleteCancel&quot; class=&quot;btn secondary&quot;&gt;إلغاء&lt;/button&gt;&lt;button type=&quot;button&quot; id=&quot;medinaV68DeleteOk&quot; class=&quot;btn danger&quot;&gt;حذف العضو&lt;/button&gt;&lt;/div&gt;&lt;/div&gt;&#x27;;
+      document.body.appendChild(overlay);
+      let done=false;
+      function finish(value){if(done)return;done=true;try{overlay.remove();}catch(e){}resolve(value);}
+      overlay.querySelector(&#x27;#medinaV68DeleteCancel&#x27;).onclick=function(){finish(false);};
+      overlay.querySelector(&#x27;#medinaV68DeleteOk&#x27;).onclick=function(){finish(true);};
+      overlay.addEventListener(&#x27;click&#x27;,function(e){if(e.target===overlay)finish(false);});
+    });
+  }
+
   window.medinaV68DeleteMember = async function(id){
     const member = findMember(id);
 
@@ -5572,7 +5601,7 @@ initTheme();buildNav();render();
       return;
     }
 
-    if(!confirm(&#x27;تأكيد حذف العضو؟&#x27;)) return;
+    if(!(await medinaV68ConfirmDeleteMember(member))) return;
 
     try{
       await updateMember(member,{
@@ -7400,10 +7429,10 @@ if(form) form.reset();
       const {db,fs} = await fb();
       CANDIDATE_COLLECTIONS.forEach(col=>{
         try{
-          parent.__linkoScopedRealtimeHub.subscribePending({db,fs},col,100,snap=>{
+          fs.onSnapshot(fs.collection(db,col), snap=>{
             collectionRows[col] = snap.docs.map(d=>normalize(d,col));
             publish();
-          }, err=>{ console.warn('LINKO Firestore pending listen failed:', col, err); });
+          }, err=>{ console.warn('LINKO Firestore listen failed:', col, err); });
         }catch(e){ console.warn('LINKO listener setup failed:', col, e); }
       });
       t('تم ربط طلبات الاشتراك مع Firebase');
@@ -7898,7 +7927,7 @@ if(form) form.reset();
       async function notifyMember(f, r, approved){ await f.fs.addDoc(f.fs.collection(f.db, NOTIFICATIONS_COLLECTION), {targetType:'member',target:'member',targetValue:r.memberId||'',memberId:r.memberId||'', memberName:r.memberName||'', memberCode:r.memberCode||'', title: approved?'تم قبول طلبك':'تم رفض طلبك', text: approved?('تم قبول '+(r.type||'طلب التعديل')):('تم رفض '+(r.type||'طلب التعديل')), requestId:r.id, status:'unread', kind:approved?'ok':'pending',clientCreatedAtMs:Date.now(), createdAt:f.fs.serverTimestamp()}); }
       window.approveAdminRequest = async function(id){ if(busy.has(String(id))) return; busy.add(String(id)); try{ const r=rows.find(x=>String(x.id)===String(id)); if(!r){msg('لم يتم العثور على الطلب');return;} const f=await fb(); const memRef=await findMemberRef(f,r); if(!memRef){msg('لم يتم العثور على العضو');return;} const payload=updatePayload(r); payload.updatedAt=f.fs.serverTimestamp(); await f.fs.updateDoc(memRef,payload); await f.fs.updateDoc(f.fs.doc(f.db,CHANGE_COLLECTION,r.id),{status:'approved',approvedAt:f.fs.serverTimestamp()}); await notifyMember(f,r,true); msg('تمت الموافقة وتحديث بيانات العضو'); }catch(e){console.error(e); msg('تعذر تنفيذ الموافقة');} finally{busy.delete(String(id));} };
       window.rejectAdminRequest = async function(id){ if(busy.has(String(id))) return; busy.add(String(id)); try{ const r=rows.find(x=>String(x.id)===String(id)); if(!r){msg('لم يتم العثور على الطلب');return;} const f=await fb(); await f.fs.updateDoc(f.fs.doc(f.db,CHANGE_COLLECTION,r.id),{status:'rejected',rejectedAt:f.fs.serverTimestamp()}); await notifyMember(f,r,false); msg('تم رفض الطلب'); }catch(e){console.error(e); msg('تعذر رفض الطلب');} finally{busy.delete(String(id));} };
-      function start(){ if(started) return; started=true; fb().then(function(f){ parent.__linkoScopedRealtimeHub.subscribePending(f,CHANGE_COLLECTION,100,function(snap){ rows=snap.docs.map(norm); publish(); },function(err){ console.warn('change requests listener failed',err); msg('تعذر قراءة طلبات التعديل'); }); }).catch(function(e){ console.error(e); msg('تعذر ربط طلبات التعديل'); }); }
+      function start(){ if(started) return; started=true; fb().then(function(f){ parent.__linkoCatalogControlHub.subscribe(f,CHANGE_COLLECTION,function(snap){ rows=snap.docs.map(norm); publish(); },function(err){ console.warn('change requests listener failed',err); msg('تعذر قراءة طلبات التعديل'); }); }).catch(function(e){ console.error(e); msg('تعذر ربط طلبات التعديل'); }); }
       document.addEventListener('click',function(e){ const btn=e.target.closest('[data-phase5-action]'); if(!btn) return; e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); const action=btn.getAttribute('data-phase5-action'), id=btn.getAttribute('data-id'); const old=btn.innerHTML; if(action==='approve'||action==='reject'){btn.disabled=true;btn.innerHTML='<span class="material-symbols-rounded">sync</span> جاري...';} const done=function(){setTimeout(function(){try{btn.disabled=false;btn.innerHTML=old;}catch(e){}},300);}; if(action==='approve') Promise.resolve(window.approveAdminRequest(id)).finally(done); else if(action==='reject') Promise.resolve(window.rejectAdminRequest(id)).finally(done); else if(action==='refresh'){start();publish();msg('تم التحديث');} }, true);
       window.linkoPhase5Refresh = function(){ start(); publish(); };
       start();
@@ -9791,159 +9820,22 @@ if(form) form.reset();
 
   window.__linkoCatalogControlHub = {subscribe:subscribe, stats:stats};
 })();
-</script><!-- ===== LINKO FOUNDATION PHASE 2E: SCOPED FIRESTORE READS ===== --><script id="linkoFoundationPhase2EScopedRealtimeHub">
+</script><!-- ===== LINKO FOUNDATION PHASE 2F REBUILT: MEMBER-SCOPED FIRESTORE READS ===== --><script id="linkoFoundationPhase2FMemberScopedHub">
 (function(){
   'use strict';
   if(window.__linkoScopedRealtimeHub) return;
-
-  const singleChannels=new Map();
-  const multiChannels=new Map();
-
+  const singleChannels=new Map(), multiChannels=new Map();
   function safe(v){return String(v==null?'':v).trim();}
-  function identity(u){
-    u=u||{};
-    return {
-      id:safe(u.firebaseId||u.memberId||u.docId||u.id),
-      name:safe(u.name||u.username||u.fullName),
-      code:safe(u.code||u.password||u.pin),
-      branch:safe(u.branchId||u.branch||u.branchName)
-    };
-  }
-  function sig(doc){
-    try{
-      return JSON.stringify(doc.data()||{},function(k,v){
-        if(v&&typeof v.toMillis==='function') return v.toMillis();
-        if(v&&typeof v.seconds==='number'&&typeof v.nanoseconds==='number') return [v.seconds,v.nanoseconds];
-        return v;
-      });
-    }catch(e){return '';}
-  }
-  function synthetic(map,previous){
-    const docs=Array.from(map.values());
-    const changes=[];
-    map.forEach(function(doc,id){
-      if(!previous.has(id)) changes.push({type:'added',doc:doc});
-      else if(sig(previous.get(id))!==sig(doc)) changes.push({type:'modified',doc:doc});
-    });
-    previous.forEach(function(doc,id){ if(!map.has(id)) changes.push({type:'removed',doc:doc}); });
-    return {
-      docs:docs,size:docs.length,empty:docs.length===0,
-      forEach:function(fn){docs.forEach(fn);},
-      docChanges:function(){return changes.slice();}
-    };
-  }
-  function subscribeSingle(key,queryRef,onNext,onError){
-    if(!queryRef||typeof onNext!=='function') return function(){};
-    let ch=singleChannels.get(key);
-    if(!ch){ch={subs:new Set(),last:null,unsub:null};singleChannels.set(key,ch);}
-    const sub={next:onNext,error:typeof onError==='function'?onError:null};
-    ch.subs.add(sub);
-    if(!ch.unsub){
-      ch.unsub=queryRef.__fs.onSnapshot(queryRef.ref,function(snap){
-        ch.last=snap;
-        ch.subs.forEach(function(s){try{s.next(snap);}catch(e){console.warn('LINKO scoped subscriber failed',key,e);}});
-      },function(err){
-        ch.subs.forEach(function(s){try{if(s.error)s.error(err);}catch(e){}});
-      });
-    }else if(ch.last){
-      Promise.resolve().then(function(){if(ch.subs.has(sub)){try{sub.next(ch.last);}catch(e){}}});
-    }
-    return function(){
-      ch.subs.delete(sub);
-      if(ch.subs.size===0&&ch.unsub){try{ch.unsub();}catch(e){} ch.unsub=null;ch.last=null;singleChannels.delete(key);}
-    };
-  }
-  function qwrap(fs,ref){return {__fs:fs,ref:ref};}
-  function subscribeQuery(firebaseRef,key,queryRef,onNext,onError){
-    if(!firebaseRef||!firebaseRef.fs||!queryRef) return function(){};
-    return subscribeSingle(key,qwrap(firebaseRef.fs,queryRef),onNext,onError);
-  }
-  function subscribeMulti(firebaseRef,key,refs,onNext,onError){
-    if(!firebaseRef||!firebaseRef.fs||!Array.isArray(refs)||!refs.length||typeof onNext!=='function') return function(){};
-    let ch=multiChannels.get(key);
-    if(!ch){
-      ch={subs:new Set(),sources:refs.map(function(ref){return {ref:ref,ready:false,map:new Map(),unsub:null};}),lastMap:new Map(),started:false};
-      multiChannels.set(key,ch);
-    }
-    const sub={next:onNext,error:typeof onError==='function'?onError:null};
-    ch.subs.add(sub);
-    function emit(){
-      if(ch.sources.some(function(s){return !s.ready;})) return;
-      const merged=new Map();
-      ch.sources.forEach(function(s){s.map.forEach(function(doc,id){merged.set(id,doc);});});
-      const snap=synthetic(merged,ch.lastMap);
-      ch.lastMap=new Map(merged);
-      ch.subs.forEach(function(s){try{s.next(snap);}catch(e){console.warn('LINKO scoped multi subscriber failed',key,e);}});
-    }
-    if(!ch.started){
-      ch.started=true;
-      ch.sources.forEach(function(source){
-        source.unsub=firebaseRef.fs.onSnapshot(source.ref,function(snap){
-          source.map=new Map();snap.forEach(function(doc){source.map.set(doc.id,doc);});source.ready=true;emit();
-        },function(err){
-          source.ready=true;source.map=new Map();
-          ch.subs.forEach(function(s){try{if(s.error)s.error(err);}catch(e){}});emit();
-        });
-      });
-    }else if(ch.sources.every(function(s){return s.ready;})){
-      Promise.resolve().then(function(){
-        const snap=synthetic(ch.lastMap,new Map(ch.lastMap));
-        if(ch.subs.has(sub)){try{sub.next(snap);}catch(e){}}
-      });
-    }
-    return function(){
-      ch.subs.delete(sub);
-      if(ch.subs.size===0){
-        ch.sources.forEach(function(s){try{if(s.unsub)s.unsub();}catch(e){}});
-        multiChannels.delete(key);
-      }
-    };
-  }
-
-  function subscribeMemberRequests(f,u,onNext,onError){
-    const who=identity(u),fs=f.fs,col=fs.collection(f.db,'memberChangeRequests');
-    if(who.id){
-      const q=fs.query(col,fs.where('memberId','==',who.id),fs.limit(30));
-      return subscribeQuery(f,'memberRequests:id:'+who.id,q,onNext,onError);
-    }
-    if(who.name){
-      const q=fs.query(col,fs.where('memberName','==',who.name),fs.limit(30));
-      return subscribeQuery(f,'memberRequests:name:'+who.name,q,onNext,onError);
-    }
-    return function(){};
-  }
-
-  function subscribeMemberNotifications(f,u,onNext,onError){
-    const who=identity(u),fs=f.fs,col=fs.collection(f.db,'memberNotifications'),refs=[];
-    if(who.id) refs.push(fs.query(col,fs.where('targetValue','==',who.id),fs.limit(40)));
-    else if(who.name) refs.push(fs.query(col,fs.where('targetMemberName','==',who.name),fs.limit(30)));
-    refs.push(fs.query(col,fs.where('targetType','==','all_members'),fs.limit(20)));
-    refs.push(fs.query(col,fs.where('targetType','==','all_branches'),fs.limit(20)));
-    if(who.branch&&who.branch!==who.id) refs.push(fs.query(col,fs.where('targetValue','==',who.branch),fs.limit(20)));
-    const key='memberNotifications:'+who.id+':'+who.name+':'+who.branch;
-    return subscribeMulti(f,key,refs,onNext,onError);
-  }
-
-  function subscribePending(f,name,limitCount,onNext,onError){
-    const fs=f.fs,col=fs.collection(f.db,name),n=Math.max(1,Number(limitCount)||100);
-    const q=fs.query(col,fs.where('status','==','pending'),fs.limit(n));
-    return subscribeQuery(f,'pending:'+name+':'+n,q,onNext,onError);
-  }
-
-  function subscribeRecent(f,name,limitCount,onNext,onError){
-    const fs=f.fs,col=fs.collection(f.db,name),n=Math.max(1,Number(limitCount)||100);
-    const q=fs.query(col,fs.orderBy('createdAt','desc'),fs.limit(n));
-    return subscribeQuery(f,'recent:'+name+':'+n,q,onNext,onError);
-  }
-
-  window.__linkoScopedRealtimeHub={
-    subscribeMemberRequests:subscribeMemberRequests,
-    subscribeMemberNotifications:subscribeMemberNotifications,
-    subscribePending:subscribePending,
-    subscribeRecent:subscribeRecent
-  };
+  function identity(u){u=u||{};return {id:safe(u.firebaseId||u.memberId||u.docId||u.id),name:safe(u.name||u.username||u.fullName),branch:safe(u.branchId||u.branch||u.branchName)};}
+  function sig(doc){try{return JSON.stringify(doc.data()||{},function(k,v){if(v&&typeof v.toMillis==='function')return v.toMillis();if(v&&typeof v.seconds==='number'&&typeof v.nanoseconds==='number')return [v.seconds,v.nanoseconds];return v;});}catch(e){return '';}}
+  function synthetic(map,previous){const docs=Array.from(map.values()),changes=[];map.forEach(function(doc,id){if(!previous.has(id))changes.push({type:'added',doc:doc});else if(sig(previous.get(id))!==sig(doc))changes.push({type:'modified',doc:doc});});previous.forEach(function(doc,id){if(!map.has(id))changes.push({type:'removed',doc:doc});});return {docs:docs,size:docs.length,empty:docs.length===0,forEach:function(fn){docs.forEach(fn);},docChanges:function(){return changes.slice();}};}
+  function subscribeQuery(f,key,queryRef,onNext,onError){if(!f||!f.fs||!queryRef||typeof onNext!=='function')return function(){};let ch=singleChannels.get(key);if(!ch){ch={subs:new Set(),last:null,unsub:null};singleChannels.set(key,ch);}const sub={next:onNext,error:typeof onError==='function'?onError:null};ch.subs.add(sub);if(!ch.unsub){ch.unsub=f.fs.onSnapshot(queryRef,function(snap){ch.last=snap;ch.subs.forEach(function(x){try{x.next(snap);}catch(e){console.warn('LINKO scoped subscriber failed',key,e);}});},function(err){ch.subs.forEach(function(x){try{if(x.error)x.error(err);}catch(e){}});});}else if(ch.last){Promise.resolve().then(function(){if(ch.subs.has(sub)){try{sub.next(ch.last);}catch(e){}}});}return function(){ch.subs.delete(sub);if(ch.subs.size===0&&ch.unsub){try{ch.unsub();}catch(e){}singleChannels.delete(key);}};}
+  function subscribeMulti(f,key,refs,onNext,onError){if(!f||!f.fs||!Array.isArray(refs)||!refs.length||typeof onNext!=='function')return function(){};let ch=multiChannels.get(key);if(!ch){ch={subs:new Set(),sources:refs.map(function(ref){return {ref:ref,ready:false,map:new Map(),unsub:null};}),lastMap:new Map(),started:false};multiChannels.set(key,ch);}const sub={next:onNext,error:typeof onError==='function'?onError:null};ch.subs.add(sub);function emit(){if(ch.sources.some(function(x){return !x.ready;}))return;const merged=new Map();ch.sources.forEach(function(x){x.map.forEach(function(doc,id){merged.set(id,doc);});});const snap=synthetic(merged,ch.lastMap);ch.lastMap=new Map(merged);ch.subs.forEach(function(x){try{x.next(snap);}catch(e){console.warn('LINKO scoped multi subscriber failed',key,e);}});}if(!ch.started){ch.started=true;ch.sources.forEach(function(source){source.unsub=f.fs.onSnapshot(source.ref,function(snap){source.map=new Map();snap.forEach(function(doc){source.map.set(doc.id,doc);});source.ready=true;emit();},function(err){source.ready=true;source.map=new Map();ch.subs.forEach(function(x){try{if(x.error)x.error(err);}catch(e){}});emit();});});}else if(ch.sources.every(function(x){return x.ready;})){Promise.resolve().then(function(){if(ch.subs.has(sub)){try{sub.next(synthetic(ch.lastMap,new Map(ch.lastMap)));}catch(e){}}});}return function(){ch.subs.delete(sub);if(ch.subs.size===0){ch.sources.forEach(function(x){try{if(x.unsub)x.unsub();}catch(e){}});multiChannels.delete(key);}};}
+  function subscribeMemberRequests(f,u,onNext,onError){const who=identity(u),fs=f.fs,col=fs.collection(f.db,'memberChangeRequests'),refs=[];if(who.id)refs.push(fs.query(col,fs.where('memberId','==',who.id),fs.limit(30)));if(who.name)refs.push(fs.query(col,fs.where('memberName','==',who.name),fs.limit(30)));if(!refs.length)return function(){};return subscribeMulti(f,'memberRequests:'+who.id+':'+who.name,refs,onNext,onError);}
+  function subscribeMemberNotifications(f,u,onNext,onError){const who=identity(u),fs=f.fs,col=fs.collection(f.db,'memberNotifications'),refs=[];if(who.id){refs.push(fs.query(col,fs.where('targetValue','==',who.id),fs.limit(40)));refs.push(fs.query(col,fs.where('memberId','==',who.id),fs.limit(40)));}else if(who.name){refs.push(fs.query(col,fs.where('memberName','==',who.name),fs.limit(30)));}refs.push(fs.query(col,fs.where('targetType','==','all_members'),fs.limit(20)));refs.push(fs.query(col,fs.where('targetType','==','all_branches'),fs.limit(20)));if(who.branch)refs.push(fs.query(col,fs.where('targetValue','==',who.branch),fs.limit(20)));return subscribeMulti(f,'memberNotifications:'+who.id+':'+who.name+':'+who.branch,refs,onNext,onError);}
+  window.__linkoScopedRealtimeHub={subscribeMemberRequests:subscribeMemberRequests,subscribeMemberNotifications:subscribeMemberNotifications};
 })();
-<!-- ===== LINKO STAGE 6.2: SMOOTH PRODUCT STATUS + NAME EDIT ONLY ===== --><script id="linkoStage62ProductSmoothNameOnly">
+</script><!-- ===== LINKO STAGE 6.2: SMOOTH PRODUCT STATUS + NAME EDIT ONLY ===== --><script id="linkoStage62ProductSmoothNameOnly">
 (function(){
   'use strict';
   if(window.__linkoStage62ProductSmoothNameOnly) return;
@@ -13484,7 +13376,10 @@ document.addEventListener('DOMContentLoaded',function(){
         +'<div class="driver-admin-pill"><small>رقم المركبة</small>'+esc(d.vehicleNumber||'-')+'</div>'
         +'</div>'
         +'<div class="actions-row">'
+        +'<button class="btn secondary mini" data-driver-admin-action="details" data-id="'+esc(d.id)+'">مشاهدة التفاصيل</button>'
+        +'<button class="btn secondary mini" data-driver-admin-action="edit" data-id="'+esc(d.id)+'">تعديل البيانات</button>'
         +'<button class="btn '+(active?'warn':'')+' mini" data-driver-admin-action="toggle" data-id="'+esc(d.id)+'" data-next="'+(active?'stopped':'active')+'">'+(active?'إيقاف المندوب':'تفعيل المندوب')+'</button>'
+        +'<button class="btn danger mini" data-driver-admin-action="delete" data-id="'+esc(d.id)+'">حذف المندوب</button>'
         +'</div>'
         +'</article>';
     }
@@ -13618,6 +13513,15 @@ document.addEventListener('DOMContentLoaded',function(){
     finally{busy.delete(id);}
   }
 
+  function findDriver(id){return driverRows.find(function(x){return String(x.id)===String(id);});}
+  function closeDriverAdminModal(){const el=document.getElementById('linkoDriverAdminModal');if(el)el.remove();}
+  function showDriverAdminModal(body){closeDriverAdminModal();const wrap=document.createElement('div');wrap.id='linkoDriverAdminModal';wrap.style.cssText='position:fixed;inset:0;z-index:1000000;background:rgba(15,23,42,.58);display:flex;align-items:center;justify-content:center;padding:18px;direction:rtl';wrap.innerHTML='<div style="width:min(520px,96vw);max-height:88vh;overflow:auto;background:#fff;color:#111827;border-radius:22px;padding:18px;box-shadow:0 28px 90px rgba(0,0,0,.35)">'+body+'</div>';document.body.appendChild(wrap);wrap.addEventListener('click',function(e){if(e.target===wrap)closeDriverAdminModal();});}
+  function showDriverDetails(id){const d=findDriver(id);if(!d)return msg('المندوب غير متوفر');showDriverAdminModal('<h3 style="margin:0 0 14px;font-size:20px;font-weight:900">تفاصيل المندوب</h3><div class="driver-admin-meta"><div class="driver-admin-pill"><small>الاسم</small>'+esc(d.name||'-')+'</div><div class="driver-admin-pill"><small>الهاتف</small>'+esc(d.phoneDisplay||d.phone||'-')+'</div><div class="driver-admin-pill"><small>المنطقة</small>'+esc(d.area||'-')+'</div><div class="driver-admin-pill"><small>المركبة</small>'+esc(d.vehicleType||'-')+'</div><div class="driver-admin-pill"><small>رقم المركبة</small>'+esc(d.vehicleNumber||'-')+'</div><div class="driver-admin-pill"><small>الحالة</small>'+esc(statusText(d.status))+'</div></div><button type="button" class="btn secondary full" data-driver-admin-action="modal-close" style="margin-top:14px">إغلاق</button>');}
+  function showDriverEdit(id){const d=findDriver(id);if(!d)return msg('المندوب غير متوفر');showDriverAdminModal('<h3 style="margin:0 0 8px;font-size:20px;font-weight:900">تعديل بيانات المندوب</h3><p class="muted" style="margin:0 0 12px">رقم الهاتف مرتبط بتسجيل الدخول، لذلك يبقى ثابتاً حتى لا ينكسر حساب المندوب.</p><div class="field"><label>الاسم</label><input id="linkoDriverEditName" value="'+esc(d.name||'')+'"></div><div class="field"><label>الهاتف</label><input value="'+esc(d.phoneDisplay||d.phone||'')+'" disabled></div><div class="field"><label>المنطقة</label><input id="linkoDriverEditArea" value="'+esc(d.area||'')+'"></div><div class="field"><label>نوع المركبة</label><input id="linkoDriverEditVehicle" value="'+esc(d.vehicleType||'')+'"></div><div class="field"><label>رقم المركبة</label><input id="linkoDriverEditVehicleNo" value="'+esc(d.vehicleNumber||'')+'"></div><div class="actions-row"><button type="button" class="btn secondary" data-driver-admin-action="modal-close">إلغاء</button><button type="button" class="btn" data-driver-admin-action="save-edit" data-id="'+esc(d.id)+'">حفظ التعديل</button></div>');}
+  async function saveDriverEdit(id){if(busy.has(id))return;const d=findDriver(id);if(!d)return msg('المندوب غير متوفر');const name=clean((document.getElementById('linkoDriverEditName')||{}).value),area=clean((document.getElementById('linkoDriverEditArea')||{}).value),vehicleType=clean((document.getElementById('linkoDriverEditVehicle')||{}).value),vehicleNumber=clean((document.getElementById('linkoDriverEditVehicleNo')||{}).value);if(!name||!area||!vehicleType)return msg('أكمل البيانات المطلوبة');busy.add(id);try{const f=await fb();await f.fs.setDoc(f.fs.doc(f.db,DRIVERS,String(id)),{name:name,area:area,vehicleType:vehicleType,vehicleNumber:vehicleNumber,updatedAt:f.fs.serverTimestamp()},{merge:true});closeDriverAdminModal();msg('تم حفظ بيانات المندوب');}catch(e){console.error(e);msg('تعذر حفظ بيانات المندوب');}finally{busy.delete(id);}}
+  function askDeleteDriver(id){const d=findDriver(id);if(!d)return msg('المندوب غير متوفر');showDriverAdminModal('<h3 style="margin:0 0 8px;font-size:20px;font-weight:900">تأكيد حذف المندوب</h3><p class="muted" style="line-height:1.8">سيتم حذف حساب <b>'+esc(d.name||'المندوب')+'</b> وإيقاف دخوله. الطلبات القديمة ستبقى محفوظة.</p><div class="actions-row"><button type="button" class="btn secondary" data-driver-admin-action="modal-close">إلغاء</button><button type="button" class="btn danger" data-driver-admin-action="delete-confirm" data-id="'+esc(d.id)+'">حذف المندوب</button></div>');}
+  async function deleteDriver(id){if(busy.has(id))return;const d=findDriver(id);if(!d)return msg('المندوب غير متوفر');busy.add(id);try{const f=await fb(),batch=f.fs.writeBatch(f.db);batch.set(f.fs.doc(f.db,DRIVERS,String(id)),{status:'deleted',deleted:true,deletedAt:f.fs.serverTimestamp(),updatedAt:f.fs.serverTimestamp()},{merge:true});batch.set(f.fs.doc(f.db,REQUESTS,String(id)),{status:'deleted',deletedAt:f.fs.serverTimestamp(),updatedAt:f.fs.serverTimestamp()},{merge:true});await batch.commit();closeDriverAdminModal();msg('تم حذف المندوب');}catch(e){console.error(e);msg('تعذر حذف المندوب');}finally{busy.delete(id);}}
+
   document.addEventListener('click',function(e){
     const btn=e.target.closest('[data-driver-admin-action]');
     if(!btn)return;
@@ -13625,6 +13529,12 @@ document.addEventListener('DOMContentLoaded',function(){
     const action=btn.getAttribute('data-driver-admin-action'),id=btn.getAttribute('data-id');
     if(action==='approve')approve(id);
     else if(action==='reject')reject(id);
+    else if(action==='details')showDriverDetails(id);
+    else if(action==='edit')showDriverEdit(id);
+    else if(action==='save-edit')saveDriverEdit(id);
+    else if(action==='delete')askDeleteDriver(id);
+    else if(action==='delete-confirm')deleteDriver(id);
+    else if(action==='modal-close')closeDriverAdminModal();
     else if(action==='toggle')toggleDriver(id,btn.getAttribute('data-next')||'stopped');
     else if(action==='refresh'){start(true);msg('تم تحديث بيانات المندوبين');}
   },true);
@@ -13638,30 +13548,20 @@ document.addEventListener('DOMContentLoaded',function(){
         if(driverUnsub){driverUnsub();driverUnsub=null}
       }
       if(!reqUnsub){
-        const pendingMap=new Map(),recentMap=new Map();
-        const publishDriverRequests=function(){
-          const merged=new Map(recentMap);
-          pendingMap.forEach(function(row,id){merged.set(id,row);});
-          reqRows=Array.from(merged.values()).sort(function(a,b){
+        reqUnsub=f.fs.onSnapshot(f.fs.collection(f.db,REQUESTS),function(snap){
+          reqRows=snap.docs.map(norm).sort(function(a,b){
             const av=Number(a.clientCreatedAtMs||0),bv=Number(b.clientCreatedAtMs||0);
             return bv-av;
           });
           appendNav();
           try{if(typeof active!=='undefined'&&active==='drivers')renderDriverSection();}catch(e){}
-        };
-        const u1=parent.__linkoScopedRealtimeHub.subscribePending(f,REQUESTS,100,function(snap){
-          pendingMap.clear();snap.docs.forEach(function(doc){pendingMap.set(doc.id,norm(doc));});publishDriverRequests();
-        },function(err){console.warn('driver pending requests listener',err);});
-        const u2=parent.__linkoScopedRealtimeHub.subscribeRecent(f,REQUESTS,40,function(snap){
-          recentMap.clear();snap.docs.forEach(function(doc){recentMap.set(doc.id,norm(doc));});publishDriverRequests();
-        },function(err){console.warn('driver recent requests listener',err);});
-        reqUnsub=function(){try{u1();}catch(e){} try{u2();}catch(e){}};
+        },function(err){console.warn('driver requests listener',err);});
       }
       if(!driverUnsub){
-        driverUnsub=parent.__linkoCatalogControlHub.subscribe(f,DRIVERS,function(snap){
+        driverUnsub=f.fs.onSnapshot(f.fs.collection(f.db,DRIVERS),function(snap){
           driverRows=snap.docs.map(norm);
           try{if(typeof active!=='undefined'&&active==='drivers')renderDriverSection();}catch(e){}
-        },function(err){console.warn('drivers shared listener',err);});
+        },function(err){console.warn('drivers listener',err);});
       }
     }catch(e){console.warn('driver admin start failed',e);}
   }
@@ -13769,8 +13669,6 @@ body.linko-dark .linko-driver-status-note{
 })();
 </script>
 
-
-<!-- LINKO FOUNDATION PHASE 2F COMPLETE: subscription/driver/log read optimization; reports keep shared order/member channels -->
 </body></html><style id="linkoSafePatchFinal">
 /* خانة التوصيل تحت بطاقة العضوية */
 #homeDeliveryStatusBox{
@@ -16080,16 +15978,18 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
   async function purgeExpired(){
     try{
       const f = await firebase();
+      const snapshot = await f.fs.getDocs(f.fs.collection(f.db,LOG_COLLECTION));
       const cutoff = Date.now() - WEEK_MS;
-      const cutoffTs = f.fs.Timestamp.fromMillis(cutoff);
-      while(true){
-        const q=f.fs.query(f.fs.collection(f.db,LOG_COLLECTION),f.fs.where('createdAt','<',cutoffTs),f.fs.limit(400));
-        const snapshot=await f.fs.getDocs(q);
-        if(snapshot.empty) break;
-        const batch=f.fs.writeBatch(f.db);
-        snapshot.docs.forEach(function(docSnap){batch.delete(docSnap.ref);});
+      const expired = snapshot.docs.filter(function(docSnap){
+        const data = docSnap.data() || {};
+        let created = Number(data.clientCreatedAtMs || 0);
+        if(!created && data.createdAt && typeof data.createdAt.toMillis === 'function') created = data.createdAt.toMillis();
+        return created > 0 && created < cutoff;
+      });
+      for(let start=0; start<expired.length; start+=400){
+        const batch = f.fs.writeBatch(f.db);
+        expired.slice(start,start+400).forEach(function(docSnap){ batch.delete(docSnap.ref); });
         await batch.commit();
-        if(snapshot.size<400) break;
       }
     }catch(error){ console.warn('LINKO 7.6 weekly cleanup failed',error); }
   }
@@ -16098,13 +15998,9 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
     firebase().then(function(f){
       let initial = true;
       const previous = new Map();
-      const sharedFull = ['orders','members','productControls','branchControls'].includes(name);
-      const recentOnly = ['memberNotifications','memberChangeRequests','subscriptionRequests'].includes(name);
-      const subscribeSource = sharedFull && window.__linkoCatalogControlHub
+      const subscribeSource = (name === 'productControls' || name === 'branchControls') && window.__linkoCatalogControlHub
         ? function(next,error){ return window.__linkoCatalogControlHub.subscribe(f,name,next,error); }
-        : (recentOnly && window.__linkoScopedRealtimeHub
-          ? function(next,error){ return window.__linkoScopedRealtimeHub.subscribeRecent(f,name,60,next,error); }
-          : function(next,error){ return f.fs.onSnapshot(f.fs.collection(f.db,name),next,error); });
+        : function(next,error){ return f.fs.onSnapshot(f.fs.collection(f.db,name),next,error); };
       subscribeSource(function(snapshot){
         const current = new Map();
         snapshot.forEach(function(docSnap){ current.set(docSnap.id,Object.assign({id:docSnap.id},docSnap.data() || {})); });
@@ -16369,15 +16265,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
         window[name]=wrapped;
       }
 
-      async function collectionCount(name){
-        const f=await firebase(),ref=f.fs.collection(f.db,name);
-        if(typeof f.fs.getCountFromServer==='function'){
-          const snapshot=await f.fs.getCountFromServer(ref);
-          return Number(snapshot.data().count||0);
-        }
-        const snapshot=await f.fs.getDocs(ref);
-        return snapshot.size;
-      }
+      async function collectionCount(name){ const f=await firebase(); const snapshot=await f.fs.getDocs(f.fs.collection(f.db,name)); return snapshot.size; }
       function installActionWrappers(){
         wrapAsync('linkoStage73DeleteAllOrders',async function(phase,args,before){
           if(phase==='before') return collectionCount('orders');
@@ -16392,7 +16280,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
       }
 
       firebase().then(function(f){
-        parent.__linkoScopedRealtimeHub.subscribeRecent(f,LOG_COLLECTION,160,function(snapshot){
+        f.fs.onSnapshot(f.fs.collection(f.db,LOG_COLLECTION),function(snapshot){
           const cutoff=Date.now()-WEEK_MS;
           liveLogs=snapshot.docs.map(function(docSnap){ return Object.assign({id:docSnap.id},docSnap.data() || {}); })
             .filter(function(row){
@@ -16405,7 +16293,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
           logsReady=true;
           try{ if(typeof active!=='undefined' && active==='logs' && typeof render==='function') render(); }catch(e){}
         },function(error){
-          console.warn('LINKO 7.6 recent logs listener failed',error);
+          console.warn('LINKO 7.6 live logs listener failed',error);
           logsReady=true;
           try{ if(typeof active!=='undefined' && active==='logs' && typeof render==='function') render(); }catch(e){}
         });
