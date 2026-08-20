@@ -3,6 +3,7 @@
 <!-- LINKO_DELIVERY_LOCATION_PHASE1_FIX_LAZY_MAP_20260819 -->
 <!-- LINKO_DELIVERY_LOCATION_REAL_FIX_20260819 -->
 <!-- LINKO_DRIVER_PHASE2_20260819 -->
+<!-- LINKO_FOUNDATION_PHASE2A_SHARED_CONTROL_LISTENERS_20260820 -->
 <!-- LINKO SUBSCRIPTION REQUESTS FINAL V48: REAPPLY ON EVERY ADMIN OPEN/FRAME LOAD -->
 <!-- LINKO FOUNDATION PHASE 1A: EXTERNAL MEDIA 20260820 -->
 <html lang="ar" dir="rtl"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" /><title>سوق المدينة الكبير | واجهة الأعضاء</title><style id="linkoNoStartupBlackScreenFinal">
@@ -9736,6 +9737,68 @@ if(form) form.reset();
 
   /* MEDINA V68: نافذة الرصيد أصبحت مباشرة داخل iframe؛ لا إعادة حقن. */
 })();
+</script><!-- ===== LINKO FOUNDATION PHASE 2A: SHARED FIRESTORE CONTROL LISTENER HUB ===== --><script id="linkoFoundationPhase2AControlHub">
+(function(){
+  'use strict';
+  if(window.__linkoCatalogControlHub) return;
+  const channels = new Map();
+
+  function subscribe(firebaseRef, collectionName, onNext, onError){
+    const name = String(collectionName || '').trim();
+    if(!firebaseRef || !firebaseRef.fs || !firebaseRef.db || !name || typeof onNext !== 'function'){
+      return function(){};
+    }
+    let channel = channels.get(name);
+    if(!channel){
+      channel = {subs:new Set(), last:null, unsub:null};
+      channels.set(name, channel);
+    }
+    const sub = {next:onNext, error:typeof onError === 'function' ? onError : null};
+    channel.subs.add(sub);
+
+    if(!channel.unsub){
+      channel.unsub = firebaseRef.fs.onSnapshot(
+        firebaseRef.fs.collection(firebaseRef.db, name),
+        function(snapshot){
+          channel.last = snapshot;
+          channel.subs.forEach(function(item){
+            try{ item.next(snapshot); }catch(error){ console.warn('LINKO shared control subscriber failed', name, error); }
+          });
+        },
+        function(error){
+          channel.subs.forEach(function(item){
+            try{ if(item.error) item.error(error); }catch(_){}
+          });
+        }
+      );
+    }else if(channel.last){
+      Promise.resolve().then(function(){
+        if(channel.subs.has(sub)){
+          try{ sub.next(channel.last); }catch(error){ console.warn('LINKO shared control replay failed', name, error); }
+        }
+      });
+    }
+
+    return function(){
+      channel.subs.delete(sub);
+      if(channel.subs.size === 0 && channel.unsub){
+        try{ channel.unsub(); }catch(_){}
+        channel.unsub = null;
+        channel.last = null;
+      }
+    };
+  }
+
+  function stats(){
+    const result = {};
+    channels.forEach(function(channel,name){
+      result[name] = {subscribers:channel.subs.size, active:!!channel.unsub};
+    });
+    return result;
+  }
+
+  window.__linkoCatalogControlHub = {subscribe:subscribe, stats:stats};
+})();
 </script><!-- ===== LINKO STAGE 6.2: SMOOTH PRODUCT STATUS + NAME EDIT ONLY ===== --><script id="linkoStage62ProductSmoothNameOnly">
 (function(){
   'use strict';
@@ -10088,7 +10151,7 @@ if(form) form.reset();
   async function startNameListener(){
     try{
       const f = await firebase();
-      f.fs.onSnapshot(f.fs.collection(f.db, COLLECTION), function(snapshot){
+      window.__linkoCatalogControlHub.subscribe(f, COLLECTION, function(snapshot){
         let changed = false;
         snapshot.docs.forEach(function(docSnap){
           const data = docSnap.data() || {};
@@ -14090,7 +14153,7 @@ transform-origin:center center!important;
     listenerStarted = true;
     try{
       const f = await firebase();
-      f.fs.onSnapshot(f.fs.collection(f.db, COLLECTION), function(snapshot){
+      window.__linkoCatalogControlHub.subscribe(f, COLLECTION, function(snapshot){
         savedStatuses.clear();
         snapshot.docs.forEach(function(docSnap){
           const data = docSnap.data() || {};
@@ -14368,7 +14431,7 @@ transform-origin:center center!important;
     listenerStarted = true;
     try{
       const f = await firebase();
-      f.fs.onSnapshot(f.fs.collection(f.db, COLLECTION), function(snapshot){
+      window.__linkoCatalogControlHub.subscribe(f, COLLECTION, function(snapshot){
         savedNames.clear();
         snapshot.docs.forEach(function(docSnap){
           const data = docSnap.data() || {};
@@ -14817,7 +14880,7 @@ transform-origin:center center!important;
     listenerStarted = true;
     try{
       const f = await firebase();
-      f.fs.onSnapshot(f.fs.collection(f.db, COLLECTION), function(snapshot){
+      window.__linkoCatalogControlHub.subscribe(f, COLLECTION, function(snapshot){
         savedStatuses.clear();
         snapshot.docs.forEach(function(docSnap){
           const data = docSnap.data() || {};
@@ -15089,7 +15152,7 @@ transform-origin:center center!important;
     listenerStarted = true;
     try{
       const f = await firebase();
-      f.fs.onSnapshot(f.fs.collection(f.db, COLLECTION), function(snapshot){
+      window.__linkoCatalogControlHub.subscribe(f, COLLECTION, function(snapshot){
         savedNames.clear();
         snapshot.docs.forEach(function(docSnap){
           const data = docSnap.data() || {};
@@ -15880,7 +15943,10 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
     firebase().then(function(f){
       let initial = true;
       const previous = new Map();
-      f.fs.onSnapshot(f.fs.collection(f.db,name),function(snapshot){
+      const subscribeSource = (name === 'productControls' || name === 'branchControls') && window.__linkoCatalogControlHub
+        ? function(next,error){ return window.__linkoCatalogControlHub.subscribe(f,name,next,error); }
+        : function(next,error){ return f.fs.onSnapshot(f.fs.collection(f.db,name),next,error); };
+      subscribeSource(function(snapshot){
         const current = new Map();
         snapshot.forEach(function(docSnap){ current.set(docSnap.id,Object.assign({id:docSnap.id},docSnap.data() || {})); });
         if(initial){
@@ -18824,7 +18890,7 @@ body.linko-dark .linko-rating-card textarea{background:#111827;color:#fff;border
     try{
       const f=await firebase();
       if(priceUnsub)priceUnsub();
-      priceUnsub=f.fs.onSnapshot(f.fs.collection(f.db,CONTROLS),function(snapshot){
+      priceUnsub=window.__linkoCatalogControlHub.subscribe(f,CONTROLS,function(snapshot){
         let changed=false;
         snapshot.forEach(function(doc){
           const d=doc.data()||{};
