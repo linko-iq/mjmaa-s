@@ -1,4 +1,6 @@
 <!DOCTYPE html>
+<!-- LINKO FOUNDATION PHASE 2C: SHARED MEMBERS COLLECTION LISTENER 20260820 -->
+
 <!-- MEDINA_BUILD_V71_STARTUP_GUARD_20260804 -->
 <!-- LINKO_DELIVERY_LOCATION_PHASE1_FIX_LAZY_MAP_20260819 -->
 <!-- LINKO_DELIVERY_LOCATION_REAL_FIX_20260819 -->
@@ -8344,7 +8346,7 @@ if(form) form.reset();
     function dateText(v){try{if(v&&typeof v.toDate==='function')return v.toDate().toLocaleString('ar-IQ');}catch(e){} return clean(v);}
     function norm(doc){const d=doc.data()||{};return{id:Number(d.localId||d.id||0)||Date.now(),firebaseId:doc.id,name:d.name||d.username||d.fullName||'',username:d.username||d.name||'',phone:d.phone||'',area:d.area||d.address||'',address:d.address||d.area||'',code:d.code||d.password||'',password:d.password||d.code||'',balance:Number(d.balance||0),status:d.status||'active',img:d.img||d.avatar||'',avatar:d.avatar||d.img||'',created:d.created||dateText(d.createdAt)||dateText(d.approvedAt)||''};}
     function safeLog(type,details){try{ if(typeof log==='function') log(type,details); else {state.logs=state.logs||[]; state.logs.unshift({id:Date.now(),type:type,details:details,by:'admin',time:new Date().toLocaleString('ar-IQ')}); if(typeof save==='function') save();} }catch(e){}}
-    fb().then(function(f){ f.fs.onSnapshot(f.fs.collection(f.db,'members'),function(snap){
+    fb().then(function(f){ parent.__linkoCatalogControlHub.subscribe(f,'members',function(snap){
       const byId=new Map(); snap.forEach(function(doc){const m=norm(doc); if(clean(m.name)) byId.set(doc.id,m);});
       state.members=Array.from(byId.values());
       try{ if(typeof buildNav==='function') buildNav(); if(typeof active!=='undefined' && (active==='members'||active==='dashboard')) render(); }catch(e){}
@@ -11108,7 +11110,7 @@ if(form) form.reset();
             ordersReady = true;
             refreshIfOpen();
           });
-          f.fs.onSnapshot(f.fs.collection(f.db,'members'),function(snapshot){
+          parent.__linkoCatalogControlHub.subscribe(f,'members',function(snapshot){
             const map = new Map();
             snapshot.forEach(function(docSnap){ map.set(docSnap.id,Object.assign({id:docSnap.id},docSnap.data() || {})); });
             members = Array.from(map.values());
@@ -11555,7 +11557,7 @@ body:not(.linko-dark) .info-box{
       }
 
       firebase().then(function(f){
-        f.fs.onSnapshot(f.fs.collection(f.db,'members'),function(snapshot){
+        parent.__linkoCatalogControlHub.subscribe(f,'members',function(snapshot){
           const rows = [];
           snapshot.forEach(function(docSnap){
             const data = docSnap.data() || {};
@@ -17964,7 +17966,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
             liveOrders = snapshot.docs.map(function(docSnap){ return Object.assign({id:docSnap.id},docSnap.data() || {}); });
             ordersReady = true; refreshOpenSection();
           },function(error){ console.warn('LINKO authoritative orders count failed',error); ordersReady = true; refreshOpenSection(); });
-          f.fs.onSnapshot(f.fs.collection(f.db,'members'),function(snapshot){
+          parent.__linkoCatalogControlHub.subscribe(f,'members',function(snapshot){
             liveMembers = snapshot.docs.map(function(docSnap){ return Object.assign({id:docSnap.id},docSnap.data() || {}); });
             membersReady = true; refreshOpenSection();
           },function(error){ console.warn('LINKO authoritative members count failed',error); membersReady = true; refreshOpenSection(); });
