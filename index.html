@@ -6,6 +6,7 @@
 <!-- LINKO_DELIVERY_LOCATION_PHASE1_FIX_LAZY_MAP_20260819 -->
 <!-- LINKO_DELIVERY_LOCATION_REAL_FIX_20260819 -->
 <!-- LINKO_DRIVER_PHASE2_20260819 -->
+<!-- LINKO_FOUNDATION_PHASE2E_SCOPED_READS_20260820 -->
 <!-- LINKO_FOUNDATION_PHASE2A_SHARED_CONTROL_LISTENERS_20260820 -->
 <!-- LINKO SUBSCRIPTION REQUESTS FINAL V48: REAPPLY ON EVERY ADMIN OPEN/FRAME LOAD -->
 <!-- LINKO FOUNDATION PHASE 1A: EXTERNAL MEDIA 20260820 -->
@@ -4870,7 +4871,7 @@ initTheme();buildNav();render();
             }).filter(function(row){ return !!row.name; });
             safeRender();
           });
-          parent.__linkoCatalogControlHub.subscribe(f,NOTIFICATIONS_COLLECTION,function(snapshot){
+          parent.__linkoScopedRealtimeHub.subscribeRecent(f,NOTIFICATIONS_COLLECTION,100,function(snapshot){
             notificationRows = snapshot.docs.map(function(doc){ return Object.assign({id:doc.id},doc.data() || {}); })
               .sort(function(a,b){
                 const at = Number(a.clientCreatedAtMs || (a.createdAt &amp;&amp; a.createdAt.seconds*1000) || 0);
@@ -7906,10 +7907,10 @@ if(form) form.reset();
       window.requestsInbox = function(){ const qEl=document.getElementById('adminChangeSearch'); const q=qEl?qEl.value:''; const list=rows.filter(function(r){return r.status==='pending' && (!q || [r.type,r.memberName,r.memberPhone,r.details,r.newValue].join(' ').includes(q));}); return '<div class="panel"><div class="panel-head"><div><h2>استلام طلبات التعديل</h2><p>طلبات تعديل بيانات الأعضاء من صفحة حسابي، والموافقة تحدث العضو مباشرة.</p></div></div><div class="tools"><input class="input" id="adminChangeSearch" oninput="render()" value="'+esc(q)+'" placeholder="بحث بالعضو أو نوع الطلب"><button class="btn secondary" data-phase5-action="refresh">تحديث</button></div><div class="cards">'+(list.length?list.map(card).join(''):'<div class="empty">لا توجد طلبات تعديل حالياً</div>')+'</div></div>'; };
       async function findMemberRef(f, r){ if(r.memberId) return f.fs.doc(f.db, MEMBERS_COLLECTION, r.memberId); const name=clean(r.memberName), code=clean(r.memberCode); if(name&&code){ const q=f.fs.query(f.fs.collection(f.db,MEMBERS_COLLECTION), f.fs.where('name','==',name), f.fs.where('code','==',code), f.fs.limit(1)); const snap=await f.fs.getDocs(q); if(!snap.empty) return snap.docs[0].ref; } return null; }
       function updatePayload(r){ const field=clean(r.field); const val=r.newValue; if(field==='name') return {name:String(val), username:String(val), fullName:String(val)}; if(field==='phone') return {phone:String(val)}; if(field==='address') return {area:String(val), address:String(val)}; if(field==='password') return {code:String(val), password:String(val)}; if(field==='balance') return {balance:Number(val||0)}; return {}; }
-      async function notifyMember(f, r, approved){ await f.fs.addDoc(f.fs.collection(f.db, NOTIFICATIONS_COLLECTION), {memberId:r.memberId||'', memberName:r.memberName||'', memberCode:r.memberCode||'', title: approved?'تم قبول طلبك':'تم رفض طلبك', text: approved?('تم قبول '+(r.type||'طلب التعديل')):('تم رفض '+(r.type||'طلب التعديل')), requestId:r.id, status:'unread', kind:approved?'ok':'pending', createdAt:f.fs.serverTimestamp()}); }
+      async function notifyMember(f, r, approved){ await f.fs.addDoc(f.fs.collection(f.db, NOTIFICATIONS_COLLECTION), {targetType:'member',target:'member',targetValue:r.memberId||'',memberId:r.memberId||'', memberName:r.memberName||'', memberCode:r.memberCode||'', title: approved?'تم قبول طلبك':'تم رفض طلبك', text: approved?('تم قبول '+(r.type||'طلب التعديل')):('تم رفض '+(r.type||'طلب التعديل')), requestId:r.id, status:'unread', kind:approved?'ok':'pending',clientCreatedAtMs:Date.now(), createdAt:f.fs.serverTimestamp()}); }
       window.approveAdminRequest = async function(id){ if(busy.has(String(id))) return; busy.add(String(id)); try{ const r=rows.find(x=>String(x.id)===String(id)); if(!r){msg('لم يتم العثور على الطلب');return;} const f=await fb(); const memRef=await findMemberRef(f,r); if(!memRef){msg('لم يتم العثور على العضو');return;} const payload=updatePayload(r); payload.updatedAt=f.fs.serverTimestamp(); await f.fs.updateDoc(memRef,payload); await f.fs.updateDoc(f.fs.doc(f.db,CHANGE_COLLECTION,r.id),{status:'approved',approvedAt:f.fs.serverTimestamp()}); await notifyMember(f,r,true); msg('تمت الموافقة وتحديث بيانات العضو'); }catch(e){console.error(e); msg('تعذر تنفيذ الموافقة');} finally{busy.delete(String(id));} };
       window.rejectAdminRequest = async function(id){ if(busy.has(String(id))) return; busy.add(String(id)); try{ const r=rows.find(x=>String(x.id)===String(id)); if(!r){msg('لم يتم العثور على الطلب');return;} const f=await fb(); await f.fs.updateDoc(f.fs.doc(f.db,CHANGE_COLLECTION,r.id),{status:'rejected',rejectedAt:f.fs.serverTimestamp()}); await notifyMember(f,r,false); msg('تم رفض الطلب'); }catch(e){console.error(e); msg('تعذر رفض الطلب');} finally{busy.delete(String(id));} };
-      function start(){ if(started) return; started=true; fb().then(function(f){ parent.__linkoCatalogControlHub.subscribe(f,CHANGE_COLLECTION,function(snap){ rows=snap.docs.map(norm); publish(); },function(err){ console.warn('change requests listener failed',err); msg('تعذر قراءة طلبات التعديل'); }); }).catch(function(e){ console.error(e); msg('تعذر ربط طلبات التعديل'); }); }
+      function start(){ if(started) return; started=true; fb().then(function(f){ parent.__linkoScopedRealtimeHub.subscribePending(f,CHANGE_COLLECTION,100,function(snap){ rows=snap.docs.map(norm); publish(); },function(err){ console.warn('change requests listener failed',err); msg('تعذر قراءة طلبات التعديل'); }); }).catch(function(e){ console.error(e); msg('تعذر ربط طلبات التعديل'); }); }
       document.addEventListener('click',function(e){ const btn=e.target.closest('[data-phase5-action]'); if(!btn) return; e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); const action=btn.getAttribute('data-phase5-action'), id=btn.getAttribute('data-id'); const old=btn.innerHTML; if(action==='approve'||action==='reject'){btn.disabled=true;btn.innerHTML='<span class="material-symbols-rounded">sync</span> جاري...';} const done=function(){setTimeout(function(){try{btn.disabled=false;btn.innerHTML=old;}catch(e){}},300);}; if(action==='approve') Promise.resolve(window.approveAdminRequest(id)).finally(done); else if(action==='reject') Promise.resolve(window.rejectAdminRequest(id)).finally(done); else if(action==='refresh'){start();publish();msg('تم التحديث');} }, true);
       window.linkoPhase5Refresh = function(){ start(); publish(); };
       start();
@@ -8290,7 +8291,7 @@ if(form) form.reset();
     try{ if(reqUnsub) reqUnsub(); }catch(e){}
     try{
       const f=await fb();
-      reqUnsub=window.__linkoCatalogControlHub.subscribe(f,CHANGE_COLLECTION,function(snap){
+      reqUnsub=window.__linkoScopedRealtimeHub.subscribeMemberRequests(f,u,function(snap){
         memberRequestRows=[];
         snap.forEach(function(doc){ const d=doc.data()||{}; if(requestMatchesUser(d,u)) memberRequestRows.push({id:doc.id,type:d.type||d.title,details:d.details||d.newValue,status:d.status||'pending',date:d.date||toDateText(d.createdAt)||toDateText(d.updatedAt)}); });
         renderMemberRequestsClean();
@@ -8318,7 +8319,7 @@ if(form) form.reset();
     try{ if(notifUnsub) notifUnsub(); }catch(e){}
     try{
       const f=await fb();
-      notifUnsub=window.__linkoCatalogControlHub.subscribe(f,NOTIFICATIONS_COLLECTION,function(snap){
+      notifUnsub=window.__linkoScopedRealtimeHub.subscribeMemberNotifications(f,u,function(snap){
         memberNotifRows=[];
         snap.forEach(function(doc){ const d=doc.data()||{}; if(notifMatchesUser(d,u)) memberNotifRows.push({id:doc.id,title:d.title,text:d.text||d.message,kind:d.kind||'info',date:toDateText(d.createdAt)||toDateText(d.time)}); });
         memberNotifRows.sort(function(a,b){return String(b.date).localeCompare(String(a.date));});
@@ -8401,7 +8402,7 @@ if(form) form.reset();
     try{if(notifUnsubFinal)notifUnsubFinal();}catch(e){}
     try{
       const f=await fb();
-      notifUnsubFinal=window.__linkoCatalogControlHub.subscribe(f,NOTIFICATIONS_COLLECTION,function(snap){
+      notifUnsubFinal=window.__linkoScopedRealtimeHub.subscribeMemberNotifications(f,u,function(snap){
         const rows=[]; snap.forEach(function(doc){const d=doc.data()||{}; if(notifMatchesUser(d,u)) rows.push({id:doc.id,title:d.title||'إشعار من الإدارة',text:d.text||d.message||'',kind:d.kind||d.type||'info',date:dateText(d.createdAt)||dateText(d.time)||dateText(d.date),sort:(d.createdAt&&d.createdAt.seconds)||Date.now()});});
         finalNotifs=rows;
         renderNotesFinal();
@@ -9802,7 +9803,159 @@ if(form) form.reset();
 
   window.__linkoCatalogControlHub = {subscribe:subscribe, stats:stats};
 })();
-</script><!-- ===== LINKO STAGE 6.2: SMOOTH PRODUCT STATUS + NAME EDIT ONLY ===== --><script id="linkoStage62ProductSmoothNameOnly">
+</script><!-- ===== LINKO FOUNDATION PHASE 2E: SCOPED FIRESTORE READS ===== --><script id="linkoFoundationPhase2EScopedRealtimeHub">
+(function(){
+  'use strict';
+  if(window.__linkoScopedRealtimeHub) return;
+
+  const singleChannels=new Map();
+  const multiChannels=new Map();
+
+  function safe(v){return String(v==null?'':v).trim();}
+  function identity(u){
+    u=u||{};
+    return {
+      id:safe(u.firebaseId||u.memberId||u.docId||u.id),
+      name:safe(u.name||u.username||u.fullName),
+      code:safe(u.code||u.password||u.pin),
+      branch:safe(u.branchId||u.branch||u.branchName)
+    };
+  }
+  function sig(doc){
+    try{
+      return JSON.stringify(doc.data()||{},function(k,v){
+        if(v&&typeof v.toMillis==='function') return v.toMillis();
+        if(v&&typeof v.seconds==='number'&&typeof v.nanoseconds==='number') return [v.seconds,v.nanoseconds];
+        return v;
+      });
+    }catch(e){return '';}
+  }
+  function synthetic(map,previous){
+    const docs=Array.from(map.values());
+    const changes=[];
+    map.forEach(function(doc,id){
+      if(!previous.has(id)) changes.push({type:'added',doc:doc});
+      else if(sig(previous.get(id))!==sig(doc)) changes.push({type:'modified',doc:doc});
+    });
+    previous.forEach(function(doc,id){ if(!map.has(id)) changes.push({type:'removed',doc:doc}); });
+    return {
+      docs:docs,size:docs.length,empty:docs.length===0,
+      forEach:function(fn){docs.forEach(fn);},
+      docChanges:function(){return changes.slice();}
+    };
+  }
+  function subscribeSingle(key,queryRef,onNext,onError){
+    if(!queryRef||typeof onNext!=='function') return function(){};
+    let ch=singleChannels.get(key);
+    if(!ch){ch={subs:new Set(),last:null,unsub:null};singleChannels.set(key,ch);}
+    const sub={next:onNext,error:typeof onError==='function'?onError:null};
+    ch.subs.add(sub);
+    if(!ch.unsub){
+      ch.unsub=queryRef.__fs.onSnapshot(queryRef.ref,function(snap){
+        ch.last=snap;
+        ch.subs.forEach(function(s){try{s.next(snap);}catch(e){console.warn('LINKO scoped subscriber failed',key,e);}});
+      },function(err){
+        ch.subs.forEach(function(s){try{if(s.error)s.error(err);}catch(e){}});
+      });
+    }else if(ch.last){
+      Promise.resolve().then(function(){if(ch.subs.has(sub)){try{sub.next(ch.last);}catch(e){}}});
+    }
+    return function(){
+      ch.subs.delete(sub);
+      if(ch.subs.size===0&&ch.unsub){try{ch.unsub();}catch(e){} ch.unsub=null;ch.last=null;singleChannels.delete(key);}
+    };
+  }
+  function qwrap(fs,ref){return {__fs:fs,ref:ref};}
+  function subscribeQuery(firebaseRef,key,queryRef,onNext,onError){
+    if(!firebaseRef||!firebaseRef.fs||!queryRef) return function(){};
+    return subscribeSingle(key,qwrap(firebaseRef.fs,queryRef),onNext,onError);
+  }
+  function subscribeMulti(firebaseRef,key,refs,onNext,onError){
+    if(!firebaseRef||!firebaseRef.fs||!Array.isArray(refs)||!refs.length||typeof onNext!=='function') return function(){};
+    let ch=multiChannels.get(key);
+    if(!ch){
+      ch={subs:new Set(),sources:refs.map(function(ref){return {ref:ref,ready:false,map:new Map(),unsub:null};}),lastMap:new Map(),started:false};
+      multiChannels.set(key,ch);
+    }
+    const sub={next:onNext,error:typeof onError==='function'?onError:null};
+    ch.subs.add(sub);
+    function emit(){
+      if(ch.sources.some(function(s){return !s.ready;})) return;
+      const merged=new Map();
+      ch.sources.forEach(function(s){s.map.forEach(function(doc,id){merged.set(id,doc);});});
+      const snap=synthetic(merged,ch.lastMap);
+      ch.lastMap=new Map(merged);
+      ch.subs.forEach(function(s){try{s.next(snap);}catch(e){console.warn('LINKO scoped multi subscriber failed',key,e);}});
+    }
+    if(!ch.started){
+      ch.started=true;
+      ch.sources.forEach(function(source){
+        source.unsub=firebaseRef.fs.onSnapshot(source.ref,function(snap){
+          source.map=new Map();snap.forEach(function(doc){source.map.set(doc.id,doc);});source.ready=true;emit();
+        },function(err){
+          source.ready=true;source.map=new Map();
+          ch.subs.forEach(function(s){try{if(s.error)s.error(err);}catch(e){}});emit();
+        });
+      });
+    }else if(ch.sources.every(function(s){return s.ready;})){
+      Promise.resolve().then(function(){
+        const snap=synthetic(ch.lastMap,new Map(ch.lastMap));
+        if(ch.subs.has(sub)){try{sub.next(snap);}catch(e){}}
+      });
+    }
+    return function(){
+      ch.subs.delete(sub);
+      if(ch.subs.size===0){
+        ch.sources.forEach(function(s){try{if(s.unsub)s.unsub();}catch(e){}});
+        multiChannels.delete(key);
+      }
+    };
+  }
+
+  function subscribeMemberRequests(f,u,onNext,onError){
+    const who=identity(u),fs=f.fs,col=fs.collection(f.db,'memberChangeRequests');
+    if(who.id){
+      const q=fs.query(col,fs.where('memberId','==',who.id),fs.limit(30));
+      return subscribeQuery(f,'memberRequests:id:'+who.id,q,onNext,onError);
+    }
+    if(who.name){
+      const q=fs.query(col,fs.where('memberName','==',who.name),fs.limit(30));
+      return subscribeQuery(f,'memberRequests:name:'+who.name,q,onNext,onError);
+    }
+    return function(){};
+  }
+
+  function subscribeMemberNotifications(f,u,onNext,onError){
+    const who=identity(u),fs=f.fs,col=fs.collection(f.db,'memberNotifications'),refs=[];
+    if(who.id) refs.push(fs.query(col,fs.where('targetValue','==',who.id),fs.limit(40)));
+    else if(who.name) refs.push(fs.query(col,fs.where('targetMemberName','==',who.name),fs.limit(30)));
+    refs.push(fs.query(col,fs.where('targetType','==','all_members'),fs.limit(20)));
+    refs.push(fs.query(col,fs.where('targetType','==','all_branches'),fs.limit(20)));
+    if(who.branch&&who.branch!==who.id) refs.push(fs.query(col,fs.where('targetValue','==',who.branch),fs.limit(20)));
+    const key='memberNotifications:'+who.id+':'+who.name+':'+who.branch;
+    return subscribeMulti(f,key,refs,onNext,onError);
+  }
+
+  function subscribePending(f,name,limitCount,onNext,onError){
+    const fs=f.fs,col=fs.collection(f.db,name),n=Math.max(1,Number(limitCount)||100);
+    const q=fs.query(col,fs.where('status','==','pending'),fs.limit(n));
+    return subscribeQuery(f,'pending:'+name+':'+n,q,onNext,onError);
+  }
+
+  function subscribeRecent(f,name,limitCount,onNext,onError){
+    const fs=f.fs,col=fs.collection(f.db,name),n=Math.max(1,Number(limitCount)||100);
+    const q=fs.query(col,fs.orderBy('createdAt','desc'),fs.limit(n));
+    return subscribeQuery(f,'recent:'+name+':'+n,q,onNext,onError);
+  }
+
+  window.__linkoScopedRealtimeHub={
+    subscribeMemberRequests:subscribeMemberRequests,
+    subscribeMemberNotifications:subscribeMemberNotifications,
+    subscribePending:subscribePending,
+    subscribeRecent:subscribeRecent
+  };
+})();
+<!-- ===== LINKO STAGE 6.2: SMOOTH PRODUCT STATUS + NAME EDIT ONLY ===== --><script id="linkoStage62ProductSmoothNameOnly">
 (function(){
   'use strict';
   if(window.__linkoStage62ProductSmoothNameOnly) return;
@@ -11856,7 +12009,7 @@ body.linko-dark #linkoUrgentMemberNotificationPopup small{color:#fde68a!importan
     try{if(unsub){unsub();unsub=null;}}catch(e){}
     try{
       const f=await firebase();let initial=true;
-      unsub=window.__linkoCatalogControlHub.subscribe(f,'memberNotifications',function(snap){
+      unsub=window.__linkoScopedRealtimeHub.subscribeMemberNotifications(f,user,function(snap){
         if(initial){initial=false;return;}
         snap.docChanges().forEach(function(ch){
           if(ch.type!=='added')return;
@@ -12166,9 +12319,9 @@ body.linko-dark #linkoUrgentMemberNotificationPopup small{color:#fde68a!importan
     try{
       const f = await firebase();
 
-      notificationUnsub = window.__linkoCatalogControlHub.subscribe(
+      notificationUnsub = window.__linkoScopedRealtimeHub.subscribeMemberNotifications(
         f,
-        'memberNotifications',
+        member,
         function(snapshot){
           const rows = [];
 
@@ -15949,7 +16102,9 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
       const previous = new Map();
       const subscribeSource = (name === 'productControls' || name === 'branchControls') && window.__linkoCatalogControlHub
         ? function(next,error){ return window.__linkoCatalogControlHub.subscribe(f,name,next,error); }
-        : function(next,error){ return f.fs.onSnapshot(f.fs.collection(f.db,name),next,error); };
+        : ((name === 'memberNotifications' || name === 'memberChangeRequests') && window.__linkoScopedRealtimeHub
+          ? function(next,error){ return window.__linkoScopedRealtimeHub.subscribeRecent(f,name,60,next,error); }
+          : function(next,error){ return f.fs.onSnapshot(f.fs.collection(f.db,name),next,error); });
       subscribeSource(function(snapshot){
         const current = new Map();
         snapshot.forEach(function(docSnap){ current.set(docSnap.id,Object.assign({id:docSnap.id},docSnap.data() || {})); });
