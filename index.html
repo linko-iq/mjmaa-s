@@ -13247,6 +13247,7 @@ document.addEventListener('DOMContentLoaded',function(){
 </script>
 
 
+<!-- LINKO DRIVER ADMIN TABS + REPORTS + DELETE 20260820 -->
 <script id="linkoDriverPhase2AdminPatch">
 (function(){
   'use strict';
@@ -13272,7 +13273,7 @@ document.addEventListener('DOMContentLoaded',function(){
   const CFG=${JSON.stringify(FIREBASE_CONFIG)};
   const REQUESTS='driverRequests';
   const DRIVERS='drivers';
-  let fbPromise=null,reqRows=[],driverRows=[],reqUnsub=null,driverUnsub=null;
+  let fbPromise=null,reqRows=[],driverRows=[],orderRows=[],reqUnsub=null,driverUnsub=null,ordersUnsub=null,driverAdminTab='applications';
   const busy=new Set();
 
   function esc(v){
@@ -13328,9 +13329,18 @@ document.addEventListener('DOMContentLoaded',function(){
       .driver-admin-pill{padding:8px;border-radius:14px;background:#f8fafc;border:1px solid var(--line);font-size:12px;font-weight:900}
       .driver-admin-pill small{display:block;color:var(--muted);font-size:10px;margin-bottom:2px}
       .driver-admin-section-title{margin:16px 0 9px;font-size:18px;font-weight:900}
+      .driver-admin-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0 0 14px}
+      .driver-admin-tab{border:1px solid var(--line);background:#fff;border-radius:16px;padding:11px 8px;font-weight:900;cursor:pointer}
+      .driver-admin-tab.active{background:#111827;color:#fff;border-color:#111827}
+      .driver-report-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:14px}
+      .driver-report-card{background:#fff;border:1px solid var(--line);border-radius:20px;padding:14px;box-shadow:var(--soft)}
+      .driver-report-card small{display:block;color:var(--muted);font-weight:800;margin-bottom:6px}.driver-report-card b{font-size:22px;font-weight:1000}
+      .driver-rank-row{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:11px 12px;margin-top:8px}
       body.theme-dark .driver-admin-card{background:#111827;border-color:#334155}
       body.theme-dark .driver-admin-pill{background:#0f172a;border-color:#334155;color:#fff}
-      @media(max-width:720px){.driver-admin-grid{grid-template-columns:1fr}.driver-admin-meta{grid-template-columns:1fr 1fr}}
+      body.theme-dark .driver-admin-tab,body.theme-dark .driver-report-card,body.theme-dark .driver-rank-row{background:#111827;border-color:#334155;color:#fff}
+      body.theme-dark .driver-admin-tab.active{background:#fff;color:#111827}
+      @media(max-width:720px){.driver-admin-grid{grid-template-columns:1fr}.driver-admin-meta{grid-template-columns:1fr 1fr}.driver-report-grid{grid-template-columns:1fr}.driver-admin-tabs{grid-template-columns:1fr}}
     \`;
     document.head.appendChild(st);
   }
@@ -13339,62 +13349,69 @@ document.addEventListener('DOMContentLoaded',function(){
     return reqRows.filter(function(x){return clean(x.status).toLowerCase()==='pending'}).length;
   }
 
+  function weekStartMs(){
+    const d=new Date(),day=d.getDay(),back=(day+1)%7;
+    d.setHours(0,0,0,0);d.setDate(d.getDate()-back);return d.getTime();
+  }
+  function orderTimeMs(o){
+    try{if(o.deliveredAt&&typeof o.deliveredAt.toMillis==='function')return o.deliveredAt.toMillis();}catch(e){}
+    try{if(o.createdAt&&typeof o.createdAt.toMillis==='function')return o.createdAt.toMillis();}catch(e){}
+    return Number(o.clientCreatedAtMs||0)||0;
+  }
+  function orderAmount(o){
+    const values=[o.finalAmount,o.deductedAmount,o.totalAmount,o.total,o.subtotal];
+    for(let i=0;i<values.length;i++){const n=Number(values[i]);if(Number.isFinite(n)&&n>0)return n;}
+    return 0;
+  }
+  function formatMoney(v){try{return Number(v||0).toLocaleString('ar-IQ')+' د.ع'}catch(e){return String(v||0)+' د.ع'}}
+  function reportData(){
+    const from=weekStartMs();
+    const delivered=orderRows.filter(function(o){return clean(o.status).toLowerCase()==='delivered'&&orderTimeMs(o)>=from});
+    const total=delivered.reduce(function(sum,o){return sum+orderAmount(o)},0);
+    const byDriver=new Map();
+    delivered.forEach(function(o){const id=clean(o.driverId)||clean(o.driverName)||'unknown';if(id==='unknown')return;const row=byDriver.get(id)||{id:id,name:clean(o.driverName)||'مندوب',count:0,amount:0};row.count++;row.amount+=orderAmount(o);byDriver.set(id,row)});
+    const top=Array.from(byDriver.values()).sort(function(a,b){return b.count-a.count||b.amount-a.amount}).slice(0,3);
+    return {delivered:delivered,total:total,top:top};
+  }
+
   function renderDriversPage(){
     const pending=reqRows.filter(function(x){return clean(x.status).toLowerCase()==='pending'});
-    const processed=reqRows.filter(function(x){return clean(x.status).toLowerCase()!=='pending'}).slice(0,20);
-    const activeDrivers=driverRows.filter(function(x){return x.deleted!==true});
+    const processed=reqRows.filter(function(x){return clean(x.status).toLowerCase()!=='pending'&&clean(x.status).toLowerCase()!=='deleted'}).slice(0,20);
+    const allDrivers=driverRows.filter(function(x){return x.deleted!==true&&clean(x.status).toLowerCase()!=='deleted'});
+    const activeDrivers=allDrivers.filter(function(x){return clean(x.status).toLowerCase()==='active'});
+    const stoppedDrivers=allDrivers.filter(function(x){return clean(x.status).toLowerCase()==='stopped'});
 
     function reqCard(r){
       return '<article class="driver-admin-card">'
-        +'<div class="driver-admin-head"><h3>'+esc(r.name||'مندوب')+'</h3>'
-        +'<span class="status '+statusClass(r.status)+'">'+esc(statusText(r.status))+'</span></div>'
-        +'<div class="driver-admin-meta">'
-        +'<div class="driver-admin-pill"><small>الهاتف</small>'+esc(r.phoneDisplay||r.phone||'-')+'</div>'
-        +'<div class="driver-admin-pill"><small>المنطقة</small>'+esc(r.area||'-')+'</div>'
-        +'<div class="driver-admin-pill"><small>المركبة</small>'+esc(r.vehicleType||'-')+'</div>'
-        +'<div class="driver-admin-pill"><small>رقم المركبة</small>'+esc(r.vehicleNumber||'-')+'</div>'
-        +'</div>'
+        +'<div class="driver-admin-head"><h3>'+esc(r.name||'مندوب')+'</h3><span class="status '+statusClass(r.status)+'">'+esc(statusText(r.status))+'</span></div>'
+        +'<div class="driver-admin-meta"><div class="driver-admin-pill"><small>الهاتف</small>'+esc(r.phoneDisplay||r.phone||'-')+'</div><div class="driver-admin-pill"><small>المنطقة</small>'+esc(r.area||'-')+'</div><div class="driver-admin-pill"><small>المركبة</small>'+esc(r.vehicleType||'-')+'</div><div class="driver-admin-pill"><small>رقم المركبة</small>'+esc(r.vehicleNumber||'-')+'</div></div>'
         +'<small class="muted">'+esc(ts(r.createdAt)||r.createdAtText||'-')+'</small>'
-        +(clean(r.status).toLowerCase()==='pending'
-          ?'<div class="actions-row">'
-            +'<button class="btn mini" data-driver-admin-action="approve" data-id="'+esc(r.id)+'">موافقة</button>'
-            +'<button class="btn warn mini" data-driver-admin-action="reject" data-id="'+esc(r.id)+'">رفض</button>'
-            +'</div>'
-          :'')
-        +'</article>';
+        +'<div class="actions-row">'
+        +(clean(r.status).toLowerCase()==='pending'?'<button class="btn mini" data-driver-admin-action="approve" data-id="'+esc(r.id)+'">موافقة</button><button class="btn warn mini" data-driver-admin-action="reject" data-id="'+esc(r.id)+'">رفض</button>':'')
+        +'<button class="btn danger mini" data-driver-admin-action="delete-request" data-id="'+esc(r.id)+'">حذف</button></div></article>';
     }
-
     function driverCard(d){
       const active=clean(d.status).toLowerCase()==='active';
       return '<article class="driver-admin-card">'
-        +'<div class="driver-admin-head"><h3>'+esc(d.name||'مندوب')+'</h3>'
-        +'<span class="status '+(active?'ok':'bad')+'">'+esc(active?'مفعل':'موقوف')+'</span></div>'
-        +'<div class="driver-admin-meta">'
-        +'<div class="driver-admin-pill"><small>الهاتف</small>'+esc(d.phoneDisplay||d.phone||'-')+'</div>'
-        +'<div class="driver-admin-pill"><small>المنطقة</small>'+esc(d.area||'-')+'</div>'
-        +'<div class="driver-admin-pill"><small>المركبة</small>'+esc(d.vehicleType||'-')+'</div>'
-        +'<div class="driver-admin-pill"><small>رقم المركبة</small>'+esc(d.vehicleNumber||'-')+'</div>'
-        +'</div>'
-        +'<div class="actions-row">'
-        +'<button class="btn secondary mini" data-driver-admin-action="details" data-id="'+esc(d.id)+'">مشاهدة التفاصيل</button>'
-        +'<button class="btn secondary mini" data-driver-admin-action="edit" data-id="'+esc(d.id)+'">تعديل البيانات</button>'
-        +'<button class="btn '+(active?'warn':'')+' mini" data-driver-admin-action="toggle" data-id="'+esc(d.id)+'" data-next="'+(active?'stopped':'active')+'">'+(active?'إيقاف المندوب':'تفعيل المندوب')+'</button>'
-        +'<button class="btn danger mini" data-driver-admin-action="delete" data-id="'+esc(d.id)+'">حذف المندوب</button>'
-        +'</div>'
-        +'</article>';
+        +'<div class="driver-admin-head"><h3>'+esc(d.name||'مندوب')+'</h3><span class="status '+(active?'ok':'bad')+'">'+esc(active?'مفعل':'موقوف')+'</span></div>'
+        +'<div class="driver-admin-meta"><div class="driver-admin-pill"><small>الهاتف</small>'+esc(d.phoneDisplay||d.phone||'-')+'</div><div class="driver-admin-pill"><small>المنطقة</small>'+esc(d.area||'-')+'</div><div class="driver-admin-pill"><small>المركبة</small>'+esc(d.vehicleType||'-')+'</div><div class="driver-admin-pill"><small>رقم المركبة</small>'+esc(d.vehicleNumber||'-')+'</div></div>'
+        +'<div class="actions-row"><button class="btn secondary mini" data-driver-admin-action="details" data-id="'+esc(d.id)+'">التفاصيل</button><button class="btn secondary mini" data-driver-admin-action="edit" data-id="'+esc(d.id)+'">تعديل</button><button class="btn '+(active?'warn':'')+' mini" data-driver-admin-action="toggle" data-id="'+esc(d.id)+'" data-next="'+(active?'stopped':'active')+'">'+(active?'إيقاف':'تفعيل')+'</button><button class="btn danger mini" data-driver-admin-action="delete" data-id="'+esc(d.id)+'">حذف</button></div></article>';
     }
-
-    return '<div class="kpis">'
-      +'<div class="kpi" data-icon="person_add"><small>طلبات بانتظار الموافقة</small><b>'+pending.length+'</b></div>'
-      +'<div class="kpi" data-icon="delivery_dining"><small>المندوبون المفعلون</small><b>'+activeDrivers.filter(function(x){return clean(x.status).toLowerCase()==='active'}).length+'</b></div>'
-      +'<div class="kpi" data-icon="person_off"><small>المندوبون الموقوفون</small><b>'+activeDrivers.filter(function(x){return clean(x.status).toLowerCase()==='stopped'}).length+'</b></div>'
-      +'</div>'
-      +'<div class="panel"><div class="panel-head"><div><h2>طلبات تسجيل المندوبين</h2><p>الموافقة تنشئ حساب مندوب مفعل بنفس بيانات الطلب.</p></div><button class="btn secondary mini" data-driver-admin-action="refresh">تحديث</button></div>'
-      +'<div class="driver-admin-grid">'+(pending.map(reqCard).join('')||'<div class="empty">لا توجد طلبات مندوبين بانتظار الموافقة</div>')+'</div>'
-      +(processed.length?'<h3 class="driver-admin-section-title">آخر الطلبات المعالجة</h3><div class="driver-admin-grid">'+processed.map(reqCard).join('')+'</div>':'')
-      +'</div>'
-      +'<div class="panel"><div class="panel-head"><div><h2>إدارة المندوبين</h2><p>تفعيل أو إيقاف حساب المندوب بدون حذف سجل الطلبات.</p></div></div>'
-      +'<div class="driver-admin-grid">'+(activeDrivers.map(driverCard).join('')||'<div class="empty">لا يوجد مندوبون مفعلون بعد</div>')+'</div></div>';
+    function tabs(){
+      return '<div class="driver-admin-tabs"><button class="driver-admin-tab '+(driverAdminTab==='applications'?'active':'')+'" data-driver-admin-tab="applications">طلبات التقديم ('+pending.length+')</button><button class="driver-admin-tab '+(driverAdminTab==='reports'?'active':'')+'" data-driver-admin-tab="reports">التقارير</button><button class="driver-admin-tab '+(driverAdminTab==='workers'?'active':'')+'" data-driver-admin-tab="workers">المندوبين العاملين ('+activeDrivers.length+')</button></div>';
+    }
+    function applicationsPane(){
+      return '<div class="panel"><div class="panel-head"><div><h2>طلبات التقديم</h2><p>طلبات تسجيل المندوبين بانتظار قرار الإدارة.</p></div><button class="btn secondary mini" data-driver-admin-action="refresh">تحديث</button></div><div class="driver-admin-grid">'+(pending.map(reqCard).join('')||'<div class="empty">لا توجد طلبات بانتظار الموافقة</div>')+'</div>'+(processed.length?'<h3 class="driver-admin-section-title">آخر الطلبات المعالجة</h3><div class="driver-admin-grid">'+processed.map(reqCard).join('')+'</div>':'')+'</div>';
+    }
+    function reportsPane(){
+      const r=reportData();
+      const topHtml=r.top.length?r.top.map(function(x,i){return '<div class="driver-rank-row"><div><b>#'+(i+1)+' '+esc(x.name)+'</b><small class="muted" style="display:block;margin-top:3px">'+x.count+' طلب مسلم</small></div><b>'+formatMoney(x.amount)+'</b></div>'}).join(''):'<div class="empty">لا توجد طلبات مسلمة هذا الأسبوع</div>';
+      return '<div class="panel"><div class="panel-head"><div><h2>تقارير المندوبين</h2><p>ملخص هذا الأسبوع بدون فتح Listener جديد للطلبات.</p></div></div><div class="driver-report-grid"><div class="driver-report-card"><small>الطلبات المسلمة هذا الأسبوع</small><b>'+r.delivered.length+'</b></div><div class="driver-report-card"><small>قيمة الطلبات المسلمة</small><b>'+formatMoney(r.total)+'</b></div><div class="driver-report-card"><small>المندوبون العاملون الآن</small><b>'+activeDrivers.length+'</b></div></div><h3 class="driver-admin-section-title">أكثر 3 مندوبين تسليماً هذا الأسبوع</h3>'+topHtml+'</div>';
+    }
+    function workersPane(){
+      return '<div class="panel"><div class="panel-head"><div><h2>المندوبين العاملين</h2><p>عرض الحسابات الفعالة وإدارة بياناتها.</p></div></div><div class="driver-admin-grid">'+(activeDrivers.map(driverCard).join('')||'<div class="empty">لا يوجد مندوبون عاملون حالياً</div>')+'</div>'+(stoppedDrivers.length?'<h3 class="driver-admin-section-title">المندوبون الموقوفون</h3><div class="driver-admin-grid">'+stoppedDrivers.map(driverCard).join('')+'</div>':'')+'</div>';
+    }
+    return '<div class="kpis"><div class="kpi" data-icon="person_add"><small>طلبات بانتظار الموافقة</small><b>'+pending.length+'</b></div><div class="kpi" data-icon="delivery_dining"><small>المندوبون المفعلون</small><b>'+activeDrivers.length+'</b></div><div class="kpi" data-icon="person_off"><small>المندوبون الموقوفون</small><b>'+stoppedDrivers.length+'</b></div></div>'+tabs()+(driverAdminTab==='reports'?reportsPane():driverAdminTab==='workers'?workersPane():applicationsPane());
   }
 
   function appendNav(){
@@ -13474,6 +13491,7 @@ document.addEventListener('DOMContentLoaded',function(){
         vehicleType:clean(r.vehicleType),
         vehicleNumber:clean(r.vehicleNumber),
         codeHash:clean(r.codeHash),
+        authUid:clean(r.authUid),
         status:'active',
         createdAt:r.createdAt||f.fs.serverTimestamp(),
         approvedAt:f.fs.serverTimestamp(),
@@ -13500,6 +13518,10 @@ document.addEventListener('DOMContentLoaded',function(){
     finally{busy.delete(id);}
   }
 
+  function findRequest(id){return reqRows.find(function(x){return String(x.id)===String(id);});}
+  function askDeleteRequest(id){const r=findRequest(id);if(!r)return msg('الطلب غير متوفر');showDriverAdminModal('<h3 style="margin:0 0 8px;font-size:20px;font-weight:900">تأكيد حذف طلب التقديم</h3><p class="muted" style="line-height:1.8">سيتم حذف طلب <b>'+esc(r.name||'المندوب')+'</b> نهائياً من طلبات التقديم.</p><div class="actions-row"><button type="button" class="btn secondary" data-driver-admin-action="modal-close">إلغاء</button><button type="button" class="btn danger" data-driver-admin-action="delete-request-confirm" data-id="'+esc(r.id)+'">تأكيد الحذف</button></div>');}
+  async function deleteRequest(id){if(busy.has(id))return;busy.add(id);try{const f=await fb();await f.fs.deleteDoc(f.fs.doc(f.db,REQUESTS,String(id)));closeDriverAdminModal();msg('تم حذف طلب التقديم');}catch(e){console.error(e);msg('تعذر حذف طلب التقديم');}finally{busy.delete(id);}}
+
   async function toggleDriver(id,next){
     if(busy.has(id))return;
     busy.add(id);
@@ -13520,9 +13542,15 @@ document.addEventListener('DOMContentLoaded',function(){
   function showDriverEdit(id){const d=findDriver(id);if(!d)return msg('المندوب غير متوفر');showDriverAdminModal('<h3 style="margin:0 0 8px;font-size:20px;font-weight:900">تعديل بيانات المندوب</h3><p class="muted" style="margin:0 0 12px">رقم الهاتف مرتبط بتسجيل الدخول، لذلك يبقى ثابتاً حتى لا ينكسر حساب المندوب.</p><div class="field"><label>الاسم</label><input id="linkoDriverEditName" value="'+esc(d.name||'')+'"></div><div class="field"><label>الهاتف</label><input value="'+esc(d.phoneDisplay||d.phone||'')+'" disabled></div><div class="field"><label>المنطقة</label><input id="linkoDriverEditArea" value="'+esc(d.area||'')+'"></div><div class="field"><label>نوع المركبة</label><input id="linkoDriverEditVehicle" value="'+esc(d.vehicleType||'')+'"></div><div class="field"><label>رقم المركبة</label><input id="linkoDriverEditVehicleNo" value="'+esc(d.vehicleNumber||'')+'"></div><div class="actions-row"><button type="button" class="btn secondary" data-driver-admin-action="modal-close">إلغاء</button><button type="button" class="btn" data-driver-admin-action="save-edit" data-id="'+esc(d.id)+'">حفظ التعديل</button></div>');}
   async function saveDriverEdit(id){if(busy.has(id))return;const d=findDriver(id);if(!d)return msg('المندوب غير متوفر');const name=clean((document.getElementById('linkoDriverEditName')||{}).value),area=clean((document.getElementById('linkoDriverEditArea')||{}).value),vehicleType=clean((document.getElementById('linkoDriverEditVehicle')||{}).value),vehicleNumber=clean((document.getElementById('linkoDriverEditVehicleNo')||{}).value);if(!name||!area||!vehicleType)return msg('أكمل البيانات المطلوبة');busy.add(id);try{const f=await fb();await f.fs.setDoc(f.fs.doc(f.db,DRIVERS,String(id)),{name:name,area:area,vehicleType:vehicleType,vehicleNumber:vehicleNumber,updatedAt:f.fs.serverTimestamp()},{merge:true});closeDriverAdminModal();msg('تم حفظ بيانات المندوب');}catch(e){console.error(e);msg('تعذر حفظ بيانات المندوب');}finally{busy.delete(id);}}
   function askDeleteDriver(id){const d=findDriver(id);if(!d)return msg('المندوب غير متوفر');showDriverAdminModal('<h3 style="margin:0 0 8px;font-size:20px;font-weight:900">تأكيد حذف المندوب</h3><p class="muted" style="line-height:1.8">سيتم حذف حساب <b>'+esc(d.name||'المندوب')+'</b> وإيقاف دخوله. الطلبات القديمة ستبقى محفوظة.</p><div class="actions-row"><button type="button" class="btn secondary" data-driver-admin-action="modal-close">إلغاء</button><button type="button" class="btn danger" data-driver-admin-action="delete-confirm" data-id="'+esc(d.id)+'">حذف المندوب</button></div>');}
-  async function deleteDriver(id){if(busy.has(id))return;const d=findDriver(id);if(!d)return msg('المندوب غير متوفر');busy.add(id);try{const f=await fb(),batch=f.fs.writeBatch(f.db);batch.set(f.fs.doc(f.db,DRIVERS,String(id)),{status:'deleted',deleted:true,deletedAt:f.fs.serverTimestamp(),updatedAt:f.fs.serverTimestamp()},{merge:true});batch.set(f.fs.doc(f.db,REQUESTS,String(id)),{status:'deleted',deletedAt:f.fs.serverTimestamp(),updatedAt:f.fs.serverTimestamp()},{merge:true});await batch.commit();closeDriverAdminModal();msg('تم حذف المندوب');}catch(e){console.error(e);msg('تعذر حذف المندوب');}finally{busy.delete(id);}}
+  async function deleteDriver(id){
+    if(busy.has(id))return;const d=findDriver(id);if(!d)return msg('المندوب غير متوفر');busy.add(id);
+    try{const f=await fb(),batch=f.fs.writeBatch(f.db);batch.delete(f.fs.doc(f.db,DRIVERS,String(id)));batch.delete(f.fs.doc(f.db,REQUESTS,String(id)));await batch.commit();closeDriverAdminModal();msg('تم حذف المندوب نهائياً من حسابات المندوبين');}
+    catch(e){console.error(e);msg('تعذر حذف المندوب');}finally{busy.delete(id);}
+  }
 
   document.addEventListener('click',function(e){
+    const tab=e.target.closest('[data-driver-admin-tab]');
+    if(tab){e.preventDefault();e.stopPropagation();driverAdminTab=tab.getAttribute('data-driver-admin-tab')||'applications';renderDriverSection();return;}
     const btn=e.target.closest('[data-driver-admin-action]');
     if(!btn)return;
     e.preventDefault();e.stopPropagation();
@@ -13532,6 +13560,8 @@ document.addEventListener('DOMContentLoaded',function(){
     else if(action==='details')showDriverDetails(id);
     else if(action==='edit')showDriverEdit(id);
     else if(action==='save-edit')saveDriverEdit(id);
+    else if(action==='delete-request')askDeleteRequest(id);
+    else if(action==='delete-request-confirm')deleteRequest(id);
     else if(action==='delete')askDeleteDriver(id);
     else if(action==='delete-confirm')deleteDriver(id);
     else if(action==='modal-close')closeDriverAdminModal();
@@ -13546,6 +13576,7 @@ document.addEventListener('DOMContentLoaded',function(){
       if(force){
         if(reqUnsub){reqUnsub();reqUnsub=null}
         if(driverUnsub){driverUnsub();driverUnsub=null}
+        if(ordersUnsub){try{ordersUnsub()}catch(e){}ordersUnsub=null}
       }
       if(!reqUnsub){
         reqUnsub=f.fs.onSnapshot(f.fs.collection(f.db,REQUESTS),function(snap){
@@ -13562,6 +13593,12 @@ document.addEventListener('DOMContentLoaded',function(){
           driverRows=snap.docs.map(norm);
           try{if(typeof active!=='undefined'&&active==='drivers')renderDriverSection();}catch(e){}
         },function(err){console.warn('drivers listener',err);});
+      }
+      if(!ordersUnsub){
+        const next=function(snap){orderRows=snap.docs.map(norm);try{if(typeof active!=='undefined'&&active==='drivers'&&driverAdminTab==='reports')renderDriverSection();}catch(e){}};
+        const fail=function(err){console.warn('driver reports orders listener',err);};
+        if(parent&&parent.__linkoCatalogControlHub)ordersUnsub=parent.__linkoCatalogControlHub.subscribe(f,'orders',next,fail);
+        else ordersUnsub=f.fs.onSnapshot(f.fs.collection(f.db,'orders'),next,fail);
       }
     }catch(e){console.warn('driver admin start failed',e);}
   }
