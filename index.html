@@ -6,7 +6,7 @@
 <!-- LINKO_DELIVERY_LOCATION_PHASE1_FIX_LAZY_MAP_20260819 -->
 <!-- LINKO_DELIVERY_LOCATION_REAL_FIX_20260819 -->
 <!-- LINKO_DRIVER_PHASE2_20260819 -->
-<!-- LINKO_FOUNDATION_PHASE2E_SCOPED_READS_20260820 -->
+<!-- LINKO_FOUNDATION_PHASE2F_REMAINING_READ_OPTIMIZATION_20260820 -->
 <!-- LINKO_FOUNDATION_PHASE2A_SHARED_CONTROL_LISTENERS_20260820 -->
 <!-- LINKO SUBSCRIPTION REQUESTS FINAL V48: REAPPLY ON EVERY ADMIN OPEN/FRAME LOAD -->
 <!-- LINKO FOUNDATION PHASE 1A: EXTERNAL MEDIA 20260820 -->
@@ -4213,28 +4213,16 @@ initTheme();buildNav();render();
 
           SUB_COLLECTIONS.forEach(function(col){
             try{
-              const ref = f.fs.collection(f.db,col);
-
-              // القراءة الأولى تكون من خادم Firebase نفسه فقط.
-              f.fs.getDocsFromServer(ref).then(function(snap){
+              parent.__linkoScopedRealtimeHub.subscribePending(f,col,100,function(snap){
                 reqRowsByCol[col] = snap.docs.map(function(d){return normalizeReq(d,col);});
                 publishRequests(false);
-              }).catch(function(err){
-                console.warn(&#x27;subscription server read failed&#x27;, col, err);
-              });
-
-              // بعد ذلك نستقبل التحديثات الحقيقية، ونتجاهل Snapshot الكاش القديم.
-              f.fs.onSnapshot(ref, {includeMetadataChanges:true}, function(snap){
-                if(snap.metadata &amp;&amp; snap.metadata.fromCache) return;
-                reqRowsByCol[col] = snap.docs.map(function(d){return normalizeReq(d,col);});
-                publishRequests(false);
-              }, function(err){ console.warn(&#x27;subscription listen failed&#x27;, col, err); });
+              },function(err){ console.warn(&#x27;subscription pending listen failed&#x27;, col, err); });
             }catch(e){ console.warn(&#x27;subscription setup failed&#x27;, col, e); }
           });
-          f.fs.onSnapshot(f.fs.collection(f.db, MEMBERS_COLLECTION), function(snap){
+          parent.__linkoCatalogControlHub.subscribe(f,MEMBERS_COLLECTION,function(snap){
             memberRows = snap.docs.map(normalizeMember);
             publishMembers(false);
-          }, function(err){ console.warn(&#x27;members listen failed&#x27;, err); });
+          },function(err){ console.warn(&#x27;members shared listen failed&#x27;, err); });
         }catch(e){ console.error(&#x27;Firebase init failed&#x27;, e); msg(&#x27;تعذر ربط Firebase&#x27;); }
       }
       function findReq(id){ return (st().requests || []).find(function(r){ return String(r.id)===String(id) || String(r.firebaseId)===String(id); }); }
@@ -4369,7 +4357,7 @@ initTheme();buildNav();render();
           try{
             const f=await fb();
             const snap=await f.fs.getDocsFromServer(
-              f.fs.collection(f.db,&#x27;subscriptionRequests&#x27;)
+              f.fs.query(f.fs.collection(f.db,&#x27;subscriptionRequests&#x27;),f.fs.where(&#x27;status&#x27;,&#x27;==&#x27;,&#x27;pending&#x27;),f.fs.limit(100))
             );
             reqRowsByCol.subscriptionRequests=snap.docs.map(function(d){
               return normalizeReq(d,&#x27;subscriptionRequests&#x27;);
@@ -4401,7 +4389,7 @@ initTheme();buildNav();render();
           try{
             const f=await fb();
             const snap=await f.fs.getDocsFromServer(
-              f.fs.collection(f.db,&#x27;subscriptionRequests&#x27;)
+              f.fs.query(f.fs.collection(f.db,&#x27;subscriptionRequests&#x27;),f.fs.where(&#x27;status&#x27;,&#x27;==&#x27;,&#x27;pending&#x27;),f.fs.limit(100))
             );
             reqRowsByCol.subscriptionRequests=snap.docs.map(function(d){
               return normalizeReq(d,&#x27;subscriptionRequests&#x27;);
@@ -7412,10 +7400,10 @@ if(form) form.reset();
       const {db,fs} = await fb();
       CANDIDATE_COLLECTIONS.forEach(col=>{
         try{
-          fs.onSnapshot(fs.collection(db,col), snap=>{
+          parent.__linkoScopedRealtimeHub.subscribePending({db,fs},col,100,snap=>{
             collectionRows[col] = snap.docs.map(d=>normalize(d,col));
             publish();
-          }, err=>{ console.warn('LINKO Firestore listen failed:', col, err); });
+          }, err=>{ console.warn('LINKO Firestore pending listen failed:', col, err); });
         }catch(e){ console.warn('LINKO listener setup failed:', col, e); }
       });
       t('تم ربط طلبات الاشتراك مع Firebase');
@@ -13650,20 +13638,30 @@ document.addEventListener('DOMContentLoaded',function(){
         if(driverUnsub){driverUnsub();driverUnsub=null}
       }
       if(!reqUnsub){
-        reqUnsub=f.fs.onSnapshot(f.fs.collection(f.db,REQUESTS),function(snap){
-          reqRows=snap.docs.map(norm).sort(function(a,b){
+        const pendingMap=new Map(),recentMap=new Map();
+        const publishDriverRequests=function(){
+          const merged=new Map(recentMap);
+          pendingMap.forEach(function(row,id){merged.set(id,row);});
+          reqRows=Array.from(merged.values()).sort(function(a,b){
             const av=Number(a.clientCreatedAtMs||0),bv=Number(b.clientCreatedAtMs||0);
             return bv-av;
           });
           appendNav();
           try{if(typeof active!=='undefined'&&active==='drivers')renderDriverSection();}catch(e){}
-        },function(err){console.warn('driver requests listener',err);});
+        };
+        const u1=parent.__linkoScopedRealtimeHub.subscribePending(f,REQUESTS,100,function(snap){
+          pendingMap.clear();snap.docs.forEach(function(doc){pendingMap.set(doc.id,norm(doc));});publishDriverRequests();
+        },function(err){console.warn('driver pending requests listener',err);});
+        const u2=parent.__linkoScopedRealtimeHub.subscribeRecent(f,REQUESTS,40,function(snap){
+          recentMap.clear();snap.docs.forEach(function(doc){recentMap.set(doc.id,norm(doc));});publishDriverRequests();
+        },function(err){console.warn('driver recent requests listener',err);});
+        reqUnsub=function(){try{u1();}catch(e){} try{u2();}catch(e){}};
       }
       if(!driverUnsub){
-        driverUnsub=f.fs.onSnapshot(f.fs.collection(f.db,DRIVERS),function(snap){
+        driverUnsub=parent.__linkoCatalogControlHub.subscribe(f,DRIVERS,function(snap){
           driverRows=snap.docs.map(norm);
           try{if(typeof active!=='undefined'&&active==='drivers')renderDriverSection();}catch(e){}
-        },function(err){console.warn('drivers listener',err);});
+        },function(err){console.warn('drivers shared listener',err);});
       }
     }catch(e){console.warn('driver admin start failed',e);}
   }
@@ -13771,6 +13769,8 @@ body.linko-dark .linko-driver-status-note{
 })();
 </script>
 
+
+<!-- LINKO FOUNDATION PHASE 2F COMPLETE: subscription/driver/log read optimization; reports keep shared order/member channels -->
 </body></html><style id="linkoSafePatchFinal">
 /* خانة التوصيل تحت بطاقة العضوية */
 #homeDeliveryStatusBox{
@@ -16080,18 +16080,16 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
   async function purgeExpired(){
     try{
       const f = await firebase();
-      const snapshot = await f.fs.getDocs(f.fs.collection(f.db,LOG_COLLECTION));
       const cutoff = Date.now() - WEEK_MS;
-      const expired = snapshot.docs.filter(function(docSnap){
-        const data = docSnap.data() || {};
-        let created = Number(data.clientCreatedAtMs || 0);
-        if(!created && data.createdAt && typeof data.createdAt.toMillis === 'function') created = data.createdAt.toMillis();
-        return created > 0 && created < cutoff;
-      });
-      for(let start=0; start<expired.length; start+=400){
-        const batch = f.fs.writeBatch(f.db);
-        expired.slice(start,start+400).forEach(function(docSnap){ batch.delete(docSnap.ref); });
+      const cutoffTs = f.fs.Timestamp.fromMillis(cutoff);
+      while(true){
+        const q=f.fs.query(f.fs.collection(f.db,LOG_COLLECTION),f.fs.where('createdAt','<',cutoffTs),f.fs.limit(400));
+        const snapshot=await f.fs.getDocs(q);
+        if(snapshot.empty) break;
+        const batch=f.fs.writeBatch(f.db);
+        snapshot.docs.forEach(function(docSnap){batch.delete(docSnap.ref);});
         await batch.commit();
+        if(snapshot.size<400) break;
       }
     }catch(error){ console.warn('LINKO 7.6 weekly cleanup failed',error); }
   }
@@ -16100,9 +16098,11 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
     firebase().then(function(f){
       let initial = true;
       const previous = new Map();
-      const subscribeSource = (name === 'productControls' || name === 'branchControls') && window.__linkoCatalogControlHub
+      const sharedFull = ['orders','members','productControls','branchControls'].includes(name);
+      const recentOnly = ['memberNotifications','memberChangeRequests','subscriptionRequests'].includes(name);
+      const subscribeSource = sharedFull && window.__linkoCatalogControlHub
         ? function(next,error){ return window.__linkoCatalogControlHub.subscribe(f,name,next,error); }
-        : ((name === 'memberNotifications' || name === 'memberChangeRequests') && window.__linkoScopedRealtimeHub
+        : (recentOnly && window.__linkoScopedRealtimeHub
           ? function(next,error){ return window.__linkoScopedRealtimeHub.subscribeRecent(f,name,60,next,error); }
           : function(next,error){ return f.fs.onSnapshot(f.fs.collection(f.db,name),next,error); });
       subscribeSource(function(snapshot){
@@ -16369,7 +16369,15 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
         window[name]=wrapped;
       }
 
-      async function collectionCount(name){ const f=await firebase(); const snapshot=await f.fs.getDocs(f.fs.collection(f.db,name)); return snapshot.size; }
+      async function collectionCount(name){
+        const f=await firebase(),ref=f.fs.collection(f.db,name);
+        if(typeof f.fs.getCountFromServer==='function'){
+          const snapshot=await f.fs.getCountFromServer(ref);
+          return Number(snapshot.data().count||0);
+        }
+        const snapshot=await f.fs.getDocs(ref);
+        return snapshot.size;
+      }
       function installActionWrappers(){
         wrapAsync('linkoStage73DeleteAllOrders',async function(phase,args,before){
           if(phase==='before') return collectionCount('orders');
@@ -16384,7 +16392,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
       }
 
       firebase().then(function(f){
-        f.fs.onSnapshot(f.fs.collection(f.db,LOG_COLLECTION),function(snapshot){
+        parent.__linkoScopedRealtimeHub.subscribeRecent(f,LOG_COLLECTION,160,function(snapshot){
           const cutoff=Date.now()-WEEK_MS;
           liveLogs=snapshot.docs.map(function(docSnap){ return Object.assign({id:docSnap.id},docSnap.data() || {}); })
             .filter(function(row){
@@ -16397,7 +16405,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
           logsReady=true;
           try{ if(typeof active!=='undefined' && active==='logs' && typeof render==='function') render(); }catch(e){}
         },function(error){
-          console.warn('LINKO 7.6 live logs listener failed',error);
+          console.warn('LINKO 7.6 recent logs listener failed',error);
           logsReady=true;
           try{ if(typeof active!=='undefined' && active==='logs' && typeof render==='function') render(); }catch(e){}
         });
