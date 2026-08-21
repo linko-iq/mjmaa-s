@@ -254,7 +254,8 @@ const SESSION_KEY="medina_driver_session_v1";
 const $=s=>document.querySelector(s);
 const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
 const clean=v=>String(v??"").trim();
-let f=null,driver=null,orders=[],ordersUnsub=null,driverUnsub=null,busy=false;
+let f=null,driver=null,orders=[],ordersUnsub=null,driverUnsub=null,currentOrderUnsub=null,busy=false;
+let availableOrdersMap=new Map(),currentOrder=null,recentDone=[],currentOrderWatchId="",driverStateMigrated=false;
 
 function toast(msg){
   const t=$("#toast");t.textContent=msg;t.classList.add("show");
@@ -440,7 +441,13 @@ async function enterApp(d){
   startListeners();
 }
 async function leave(){
-  if(ordersUnsub){ordersUnsub();ordersUnsub=null}if(driverUnsub){driverUnsub();driverUnsub=null}driver=null;orders=[];localStorage.removeItem(SESSION_KEY);try{const fb=await firebase();await fb.auth.signOut(fb.authClient)}catch(e){}$("#app").classList.remove("show");$("#authScreen").classList.remove("hidden");$("#loginCode").value="";switchTab("login");
+  if(ordersUnsub){ordersUnsub();ordersUnsub=null}
+  if(driverUnsub){driverUnsub();driverUnsub=null}
+  if(currentOrderUnsub){currentOrderUnsub();currentOrderUnsub=null}
+  driver=null;orders=[];availableOrdersMap.clear();currentOrder=null;recentDone=[];currentOrderWatchId="";driverStateMigrated=false;
+  localStorage.removeItem(SESSION_KEY);
+  try{const fb=await firebase();await fb.auth.signOut(fb.authClient)}catch(e){}
+  $("#app").classList.remove("show");$("#authScreen").classList.remove("hidden");$("#loginCode").value="";switchTab("login");
 }
 $("#logoutBtn").onclick=()=>leave();
 
@@ -520,63 +527,150 @@ function doneCard(o){
     <div class="order-preview"><div class="pill"><small>العميل</small>${esc(o.memberName||"-")}</div><div class="pill"><small>الفرع</small>${esc(o.branch||"-")}</div></div>
   </article>`;
 }
+function compactDone(o,id){
+  return {
+    id:clean(id||o.id||o.orderNumber),
+    orderNumber:clean(o.orderNumber||id||o.id),
+    memberName:clean(o.memberName),
+    branch:clean(o.branch),
+    createdAtText:clean(o.createdAtText||o.date),
+    clientCreatedAtMs:Number(o.clientCreatedAtMs||Date.now())||Date.now()
+  };
+}
+function doneFromDriver(d){
+  const rows=Array.isArray(d&&d.recentDelivered)?d.recentDelivered:[];
+  return rows.slice(0,3).map(x=>Object.assign({},x,{id:clean(x.id||x.orderNumber)}));
+}
 function render(){
-  const av=orders.filter(available),cur=orders.filter(mine),done=orders.filter(completed).sort((a,b)=>Number(b.clientCreatedAtMs||0)-Number(a.clientCreatedAtMs||0)).slice(0,10);
+  const av=Array.from(availableOrdersMap.values())
+    .filter(available)
+    .sort((a,b)=>String(b.id||b.orderNumber||"").localeCompare(String(a.id||a.orderNumber||"")))
+    .slice(0,3);
+  const cur=currentOrder&&mine(currentOrder)?[currentOrder]:[];
+  const done=recentDone.slice(0,3);
+  orders=[...av,...cur,...done];
   $("#availableCount").textContent=av.length;
   $("#currentCount").textContent=cur.length;
-  $("#doneCount").textContent=orders.filter(completed).length;
+  $("#doneCount").textContent=done.length;
   $("#availableOrders").innerHTML=av.length?av.map(availableCard).join(""):`<div class="empty">لا توجد طلبات متاحة حالياً</div>`;
   $("#currentOrders").innerHTML=cur.length?cur.map(mineCard).join(""):`<div class="empty">لا يوجد طلب مستلم حالياً</div>`;
   $("#doneOrders").innerHTML=done.length?done.map(doneCard).join(""):`<div class="empty">لا توجد طلبات مكتملة بعد</div>`;
 }
+function stopCurrentOrderWatch(){
+  if(currentOrderUnsub){try{currentOrderUnsub()}catch(e){}currentOrderUnsub=null}
+  currentOrderWatchId="";
+}
+function watchCurrentOrder(fb,id){
+  id=clean(id);
+  if(!id){
+    stopCurrentOrderWatch();
+    currentOrder=null;
+    render();
+    return;
+  }
+  if(currentOrderWatchId===id&&currentOrderUnsub)return;
+  stopCurrentOrderWatch();
+  currentOrderWatchId=id;
+  currentOrderUnsub=fb.fs.onSnapshot(fb.fs.doc(fb.db,ORDERS,id),snap=>{
+    if(!snap.exists()){
+      currentOrder=null;render();return;
+    }
+    const row={id:snap.id,...snap.data()};
+    if(clean(row.driverId)!==clean(driver&&driver.id)||!["assigned","picked_up"].includes(orderStatus(row))){
+      currentOrder=null;render();return;
+    }
+    currentOrder=row;
+    availableOrdersMap.delete(row.id);
+    render();
+  },err=>{
+    console.error("DRIVER CURRENT ORDER ERROR",err);
+    toast("تعذر قراءة الطلب الحالي");
+  });
+}
+async function migrateLegacyDriverState(fb,initialDriver){
+  if(driverStateMigrated)return;
+  driverStateMigrated=true;
+  const d=initialDriver||driver||{};
+  if(Number(d.deliveryStateVersion||0)>=2)return;
+  try{
+    const q=fb.fs.query(
+      fb.fs.collection(fb.db,ORDERS),
+      fb.fs.where("driverId","==",clean(d.id)),
+      fb.fs.orderBy(fb.fs.documentId(),"desc"),
+      fb.fs.limit(6)
+    );
+    const snap=await fb.fs.getDocs(q);
+    const rows=snap.docs.map(x=>({id:x.id,...x.data()}));
+    const active=rows.find(x=>["assigned","picked_up"].includes(orderStatus(x)))||null;
+    const done=rows.filter(x=>orderStatus(x)==="delivered").slice(0,3).map(x=>compactDone(x,x.id));
+    await fb.fs.setDoc(fb.fs.doc(fb.db,DRIVERS,clean(d.id)),{
+      deliveryStateVersion:2,
+      currentOrderId:active?active.id:null,
+      recentDelivered:done,
+      updatedAt:fb.fs.serverTimestamp()
+    },{merge:true});
+  }catch(err){
+    console.warn("DRIVER LEGACY STATE MIGRATION SKIPPED",err);
+  }
+}
 async function startListeners(){
   const fb=await firebase();
-  if(ordersUnsub)ordersUnsub();
-  const sourceMaps={available:new Map(),mine:new Map()};
-  const emitOrders=()=>{
-    const merged=new Map();
-    sourceMaps.available.forEach((v,k)=>merged.set(k,v));
-    sourceMaps.mine.forEach((v,k)=>merged.set(k,v));
-    orders=Array.from(merged.values()).sort((a,b)=>Number(b.clientCreatedAtMs||0)-Number(a.clientCreatedAtMs||0));
-    render();
-  };
+  if(ordersUnsub){ordersUnsub();ordersUnsub=null}
+  if(driverUnsub){driverUnsub();driverUnsub=null}
+  stopCurrentOrderWatch();
+  availableOrdersMap.clear();currentOrder=null;recentDone=[];render();
+
+  // أحدث ثلاثة طلبات pending فقط. أرقام ORD مرتبة زمنياً، لذلك لا تهيمن الطلبات القديمة على القائمة.
   const availableQuery=fb.fs.query(
     fb.fs.collection(fb.db,ORDERS),
-    fb.fs.where("status","in",["pending","new","جديد"]),
-    fb.fs.limit(3)
-  );
-  const mineQuery=fb.fs.query(
-    fb.fs.collection(fb.db,ORDERS),
-    fb.fs.where("driverId","==",driver.id),
+    fb.fs.where("status","==","pending"),
+    fb.fs.orderBy(fb.fs.documentId(),"desc"),
     fb.fs.limit(3)
   );
   const unsubAvailable=fb.fs.onSnapshot(availableQuery,snap=>{
-    sourceMaps.available=new Map(snap.docs.map(d=>[d.id,{id:d.id,...d.data()}]));emitOrders();
-  },err=>{console.error("DRIVER AVAILABLE ORDERS ERROR",err);toast("تعذر قراءة الطلبات المتاحة")});
-  const unsubMine=fb.fs.onSnapshot(mineQuery,snap=>{
-    sourceMaps.mine=new Map(snap.docs.map(d=>[d.id,{id:d.id,...d.data()}]));emitOrders();
-  },err=>{console.error("DRIVER OWN ORDERS ERROR",err);toast("تعذر قراءة طلبات المندوب")});
-  ordersUnsub=()=>{try{unsubAvailable()}catch(e){}try{unsubMine()}catch(e){}};
-  if(driverUnsub)driverUnsub();
+    availableOrdersMap=new Map(snap.docs.map(d=>[d.id,{id:d.id,...d.data()}]));
+    render();
+  },err=>{
+    console.error("DRIVER AVAILABLE ORDERS ERROR",err);
+    toast(String(err&&err.code||"").includes("failed-precondition")?"استعلام الطلبات يحتاج فهرس Firestore مرة واحدة":"تعذر قراءة الطلبات المتاحة");
+  });
+  ordersUnsub=()=>{try{unsubAvailable()}catch(e){}};
+
   driverUnsub=fb.fs.onSnapshot(fb.fs.doc(fb.db,DRIVERS,driver.id),snap=>{
     if(!snap.exists()||String(snap.data().status||"").toLowerCase()!=="active"){
       toast("تم إيقاف حساب المندوب من الإدارة");leave();return;
     }
     driver={id:snap.id,...snap.data()};
-    $("#driverState").textContent="متاح";
+    recentDone=doneFromDriver(driver);
+    const activeId=clean(driver.currentOrderId);
+    if(activeId)watchCurrentOrder(fb,activeId);
+    else{
+      stopCurrentOrderWatch();
+      currentOrder=null;
+      render();
+    }
+    $("#driverState").textContent=activeId?"لديه طلب":"متاح";
+  },err=>{
+    console.error("DRIVER PROFILE LISTENER ERROR",err);
+    toast("تعذر تحديث حالة المندوب");
   });
+
+  migrateLegacyDriverState(fb,driver);
 }
 async function acceptOrder(id){
   if(busy||!driver)return;busy=true;loading(true,"جاري تثبيت الطلب باسمك...");
   try{
-    const fb=await firebase(),ref=fb.fs.doc(fb.db,ORDERS,id);
+    const fb=await firebase(),ref=fb.fs.doc(fb.db,ORDERS,id),driverRef=fb.fs.doc(fb.db,DRIVERS,driver.id);
     let acceptedOrder=null;
     await fb.fs.runTransaction(fb.db,async tx=>{
-      const snap=await tx.get(ref);
-      if(!snap.exists())throw new Error("ORDER_MISSING");
-      const o=snap.data()||{},s=String(o.status||"").toLowerCase();
-      acceptedOrder={id:snap.id,...o};
-      if(clean(o.driverId)||!["pending","new","جديد"].includes(s))throw new Error("ORDER_TAKEN");
+      const orderSnap=await tx.get(ref);
+      const driverSnap=await tx.get(driverRef);
+      if(!orderSnap.exists())throw new Error("ORDER_MISSING");
+      if(!driverSnap.exists())throw new Error("DRIVER_MISSING");
+      const o=orderSnap.data()||{},s=String(o.status||"").toLowerCase(),dd=driverSnap.data()||{};
+      acceptedOrder={id:orderSnap.id,...o};
+      if(clean(dd.currentOrderId)&&clean(dd.currentOrderId)!==clean(id))throw new Error("CURRENT_ORDER_EXISTS");
+      if(clean(o.driverId)||s!=="pending")throw new Error("ORDER_TAKEN");
       const loc=o.customerLocation||{};
       if(!(loc.confirmed===true||Number.isFinite(Number(o.customerLocationLat))))throw new Error("NO_LOCATION");
       tx.update(ref,{
@@ -587,22 +681,29 @@ async function acceptOrder(id){
         acceptedAt:fb.fs.serverTimestamp(),
         updatedAt:fb.fs.serverTimestamp()
       });
+      tx.update(driverRef,{
+        currentOrderId:id,
+        currentOrderAcceptedAt:fb.fs.serverTimestamp(),
+        deliveryStateVersion:2,
+        updatedAt:fb.fs.serverTimestamp()
+      });
     });
-    toast("تم قبول الطلب وتثبيته باسمك");
     if(acceptedOrder){
-      pushMemberNotification(
-        acceptedOrder,
-        "تم تعيين مندوب لطلبك",
-        "تمت الموافقة على طلبك، قريباً سيكون المندوب عندك.",
-        "ok"
-      );
+      currentOrder={...acceptedOrder,status:"assigned",driverId:driver.id,driverName:clean(driver.name),driverPhone:clean(driver.phoneDisplay||driver.phone)};
+      availableOrdersMap.delete(id);
+      render();
+      watchCurrentOrder(fb,id);
+      pushMemberNotification(acceptedOrder,"تم تعيين مندوب لطلبك","تمت الموافقة على طلبك، قريباً سيكون المندوب عندك.","ok");
     }
+    toast("تم قبول الطلب وظهر في طلبي الحالي");
   }catch(err){
     console.error("DRIVER ACCEPT ORDER ERROR",err);
     const m=String(err&&err.message||""),c=String(err&&err.code||"");
-    toast(m==="ORDER_TAKEN"?"هذا الطلب استلمه مندوب آخر":
+    toast(m==="CURRENT_ORDER_EXISTS"?"لديك طلب حالي، أكمله قبل قبول طلب آخر":
+      m==="ORDER_TAKEN"?"هذا الطلب استلمه مندوب آخر":
       m==="NO_LOCATION"?"هذا الطلب لا يحتوي موقع تسليم":
       c.includes("resource-exhausted")?"الخدمة مزدحمة مؤقتاً، حاول بعد قليل":
+      c.includes("permission-denied")?"صلاحيات Firebase منعت تثبيت الطلب على المندوب":
       "تعذر قبول الطلب الآن");
   }finally{busy=false;loading(false)}
 }
@@ -610,41 +711,61 @@ async function acceptOrder(id){
 async function setOrderStatus(id,status){
   if(busy||!driver)return;busy=true;loading(true,status==="delivered"?"جاري إنهاء الطلب...":"جاري تحديث حالة الطلب...");
   try{
-    const fb=await firebase(),ref=fb.fs.doc(fb.db,ORDERS,id);
-    let statusOrder=null;
+    const fb=await firebase(),ref=fb.fs.doc(fb.db,ORDERS,id),driverRef=fb.fs.doc(fb.db,DRIVERS,driver.id);
+    let statusOrder=null,nextDone=null;
     await fb.fs.runTransaction(fb.db,async tx=>{
-      const snap=await tx.get(ref);if(!snap.exists())throw new Error("ORDER_MISSING");
-      const o=snap.data()||{};
-      statusOrder={id:snap.id,...o};
+      const orderSnap=await tx.get(ref);if(!orderSnap.exists())throw new Error("ORDER_MISSING");
+      const o=orderSnap.data()||{};
+      statusOrder={id:orderSnap.id,...o};
       if(clean(o.driverId)!==clean(driver.id))throw new Error("NOT_YOUR_ORDER");
+      const currentStatus=orderStatus(o);
+      if(status==="picked_up"&&currentStatus!=="assigned")throw new Error("BAD_STATUS");
+      if(status==="delivered"&&currentStatus!=="picked_up")throw new Error("BAD_STATUS");
+      let driverSnap=null,dd=null;
+      if(status==="delivered"){
+        // Firestore transactions require every read before the first write.
+        driverSnap=await tx.get(driverRef);
+        if(!driverSnap.exists())throw new Error("DRIVER_MISSING");
+        dd=driverSnap.data()||{};
+        if(clean(dd.currentOrderId)&&clean(dd.currentOrderId)!==clean(id))throw new Error("CURRENT_ORDER_CHANGED");
+      }
       const payload={status,updatedAt:fb.fs.serverTimestamp()};
       if(status==="picked_up")payload.pickedUpAt=fb.fs.serverTimestamp();
       if(status==="delivered")payload.deliveredAt=fb.fs.serverTimestamp();
       tx.update(ref,payload);
-    });
-    toast(status==="delivered"?"تم تسجيل تسليم الطلب":"تم تحديث الحالة");
-    if(statusOrder){
-      if(status==="picked_up"){
-        pushMemberNotification(
-          statusOrder,
-          "المندوب في الطريق إليك",
-          "المندوب استلم الطلب وهو في الطريق إلى موقعك.",
-          "info"
-        );
-      }else if(status==="delivered"){
-        pushMemberNotification(
-          statusOrder,
-          "تم تسليم طلبك",
-          "تم تسليم الطلب بنجاح. يمكنك الآن تقييم الطلب والمندوب من صفحة طلباتي.",
-          "ok"
-        );
+
+      if(status==="delivered"){
+        const summary=compactDone({...o,status:"delivered"},orderSnap.id);
+        const old=Array.isArray(dd.recentDelivered)?dd.recentDelivered:[];
+        nextDone=[summary,...old.filter(x=>clean(x&&x.id)!==clean(orderSnap.id))].slice(0,3);
+        tx.update(driverRef,{
+          currentOrderId:null,
+          currentOrderAcceptedAt:null,
+          recentDelivered:nextDone,
+          deliveryStateVersion:2,
+          updatedAt:fb.fs.serverTimestamp()
+        });
       }
+    });
+
+    if(status==="picked_up"){
+      currentOrder=currentOrder?{...currentOrder,status:"picked_up"}:{...statusOrder,status:"picked_up"};
+      render();
+      if(statusOrder)pushMemberNotification(statusOrder,"المندوب في الطريق إليك","المندوب استلم الطلب وهو في الطريق إلى موقعك.","info");
+      toast("تم تحديث الحالة");
+    }else{
+      if(nextDone)recentDone=nextDone;
+      currentOrder=null;stopCurrentOrderWatch();render();
+      if(statusOrder)pushMemberNotification(statusOrder,"تم تسليم طلبك","تم تسليم الطلب بنجاح. يمكنك الآن تقييم الطلب والمندوب من صفحة طلباتي.","ok");
+      toast("تم تسجيل تسليم الطلب");
     }
   }catch(err){
     console.error("DRIVER STATUS UPDATE ERROR",err);
     const m=String(err&&err.message||""),c=String(err&&err.code||"");
     toast(m==="NOT_YOUR_ORDER"?"هذا الطلب ليس مثبتاً باسمك":
       m==="ORDER_MISSING"?"الطلب لم يعد موجوداً":
+      m==="BAD_STATUS"?"حالة الطلب تغيرت، أعد المحاولة":
+      m==="CURRENT_ORDER_CHANGED"?"الطلب الحالي للمندوب تغير":
       c.includes("permission-denied")?"تعذر تحديث الطلب بسبب صلاحيات Firebase":
       "تعذر تحديث حالة الطلب");
   }finally{busy=false;loading(false)}
@@ -655,7 +776,7 @@ document.addEventListener("click",e=>{
 });
 restoreSession();
 </script>
-<!-- LINKO_DELIVERY_RADICAL_READ_AUDIT_PHASE2_20260821: redundant verify read removed; realtime bounded to 3+3+driver -->
-<!-- LINKO_RADICAL_READ_ARCHITECTURE_V1: courier pending limit5, own limit8 -->
+<!-- LINKO_DELIVERY_PHASE2_CURRENT_ORDER_ARCHITECTURE_20260821 -->
+<!-- Reads: pending latest3 listener + driver doc + exactly one current order doc; legacy driver state migrates once only -->
 </body>
 </html>
