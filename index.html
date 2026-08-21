@@ -7882,11 +7882,11 @@ if(form) form.reset();
       });
     }catch(e){ console.warn('notifications listener failed', e); }
   }
-  const oldLogin = window.login;
-  if(typeof oldLogin === 'function'){
-    window.login = async function(){
-      const res = await oldLogin.apply(this, arguments);
-      setTimeout(function(){ startMemberDocListener(); startNotifications(); }, 300);
+  const oldGoLazy = window.go;
+  if(typeof oldGoLazy === 'function'){
+    window.go = function(id){
+      const res = oldGoLazy.apply(this,arguments);
+      if(id==='notificationsPage') setTimeout(startNotifications,80);
       return res;
     };
   }
@@ -7894,7 +7894,7 @@ if(form) form.reset();
   if(typeof oldLogout === 'function'){
     window.logout = function(){ try{ if(memberDocUnsub) memberDocUnsub(); if(notifUnsub) notifUnsub(); }catch(e){} return oldLogout.apply(this, arguments); };
   }
-  setTimeout(function(){ startMemberDocListener(); startNotifications(); }, 800);
+  // RADICAL READ MODE: do not open legacy member/notification listeners automatically.
 
   function adminPatchCode(){
     return '(' + function(){
@@ -8352,12 +8352,10 @@ if(form) form.reset();
   window.renderNotes = function(){ renderNotesClean(); };
 
   const oldGo=window.go;
-  window.go=function(id){ const r=oldGo&&oldGo.apply(this,arguments); setTimeout(function(){ if(id==='profilePage'){startMemberRequests(); renderMemberRequestsClean(); refreshMember();} if(id==='notificationsPage'){startNotificationsClean(); renderNotesClean();} if(id==='homePage'){refreshMember();} },80); return r; };
-  const oldLogin=window.login;
-  if(typeof oldLogin==='function') window.login=function(){ const r=oldLogin.apply(this,arguments); setTimeout(function(){ refreshMember(); startMemberRequests(); startNotificationsClean(); },500); return r; };
+  window.go=function(id){ const r=oldGo&&oldGo.apply(this,arguments); setTimeout(function(){ if(id==='profilePage'){startMemberRequests(); renderMemberRequestsClean();} if(id==='notificationsPage'){startNotificationsClean(); renderNotesClean();} },80); return r; };
   const oldLogout=window.logout;
   if(typeof oldLogout==='function') window.logout=function(){ try{if(reqUnsub)reqUnsub(); if(notifUnsub)notifUnsub(); memberRequestRows=[]; memberNotifRows=[];}catch(e){} return oldLogout.apply(this,arguments); };
-  setTimeout(function(){ refreshMember(); startMemberRequests(); startNotificationsClean(); },1000);
+  // RADICAL READ MODE: no member requests/notifications/background member refresh on login or startup.
   /* LINKO FIRESTORE READS ROOT FIX: removed duplicate 2.5-second refreshMember polling. */
 
   // تنظيف إدارة الأعضاء داخل iframe: مصدر الأعضاء Firebase فقط، بدون دمج state.members القديم الذي يسبب التكرار.
@@ -8455,10 +8453,8 @@ if(form) form.reset();
     const once='linko_order_count_done_'+memberKey(u)+'_'+key; if(localStorage.getItem(once))return; localStorage.setItem(once,'1');
     try{
       const f=await fb(); const ref=await findMemberRef(f,u); if(!ref)return;
-      const snap=await f.fs.getDoc(ref); const d=snap.exists()?(snap.data()||{}):{};
-      const old=Number(d.ordersCount||d.orderCount||u.ordersCount||u.orderCount||0);
-      const next=old+1;
-      await f.fs.updateDoc(ref,{ordersCount:next,orderCount:next,updatedAt:f.fs.serverTimestamp()});
+      const old=Number(u.ordersCount||u.orderCount||0),next=old+1;
+      await f.fs.updateDoc(ref,{ordersCount:f.fs.increment(1),orderCount:f.fs.increment(1),updatedAt:f.fs.serverTimestamp()});
       const merged=Object.assign({},u,{ordersCount:next,orderCount:next}); setUser(merged); setOrderCountUI(next);
       try{ if(typeof fillUser==='function') fillUser(); }catch(e){}
     }catch(e){console.warn('final order counter failed',e);}
@@ -8507,15 +8503,13 @@ if(form) form.reset();
     const r=oldGoFinal&&oldGoFinal.apply(this,arguments);
     setTimeout(function(){
       if(id==='notificationsPage'){startNotifFinal(); renderNotesFinal(); markNotificationsRead();}
-      if(id==='homePage'||id==='profilePage') updateNotifBadge();
       patchAdminFrame();
     },120);
     return r;
   };
-  const oldLoginFinal=window.login; if(typeof oldLoginFinal==='function') window.login=function(){const r=oldLoginFinal.apply(this,arguments); setTimeout(function(){startNotifFinal(); updateNotifBadge();},700); return r;};
   const oldLogoutFinal=window.logout; if(typeof oldLogoutFinal==='function') window.logout=function(){try{if(notifUnsubFinal)notifUnsubFinal(); finalNotifs=[]; setBadge(0);}catch(e){} return oldLogoutFinal.apply(this,arguments);};
-  setTimeout(function(){startNotifFinal(); updateNotifBadge(); patchAdminFrame();},1200);
   setInterval(function(){if(isNotificationsOpen()) markNotificationsRead(); patchAdminFrame();},1800);
+  // RADICAL READ MODE: notification history is lazy; no background listener on login/startup.
 })();
 </script><!-- ===== LINKO PHASE 5 ROOT FIX: ORDERS COUNT + ADMIN MEMBERS LIVE SOURCE ===== --><script id="linkoPhase5OrdersAndAdminMembersRootFix">
 (function(){
@@ -8581,11 +8575,9 @@ if(form) form.reset();
     localStorage.setItem('linko_last_order_count_'+k,String(now));
     try{
       const f=await fb(); const ref=await findMemberRef(f,u); if(!ref) return;
-      const snap=await f.fs.getDoc(ref); const d=snap.exists()?(snap.data()||{}):{};
-      const old=Number(d.ordersCount||d.orderCount||0);
-      const next=old+1;
-      await f.fs.updateDoc(ref,{ordersCount:next,orderCount:next,updatedAt:f.fs.serverTimestamp()});
-      const merged=Object.assign({},u,d,{firebaseId:ref.id,memberId:ref.id,ordersCount:next,orderCount:next});
+      const old=Number(u.ordersCount||u.orderCount||0), next=old+1;
+      await f.fs.updateDoc(ref,{ordersCount:f.fs.increment(1),orderCount:f.fs.increment(1),updatedAt:f.fs.serverTimestamp()});
+      const merged=Object.assign({},u,{firebaseId:ref.id,memberId:ref.id,ordersCount:next,orderCount:next});
       setUser(merged); setOrderUI(next);
       try{ if(typeof fillUser==='function') fillUser(); }catch(e){}
       try{ if(typeof window.linkoRefreshMember==='function') window.linkoRefreshMember(); }catch(e){}
@@ -9880,8 +9872,8 @@ if(form) form.reset();
     const who=identity(u),fs=f.fs,col=fs.collection(f.db,'memberChangeRequests'),refs=[];
     // READ OPTIMIZATION PHASE 2: authenticated members have a stable document id, so do not
     // open the legacy name query in parallel. Keep the name path only as a fallback for old sessions.
-    if(who.id) refs.push(fs.query(col,fs.where('memberId','==',who.id),fs.limit(8)));
-    else if(who.name) refs.push(fs.query(col,fs.where('memberName','==',who.name),fs.limit(8)));
+    if(who.id) refs.push(fs.query(col,fs.where('memberId','==',who.id),fs.limit(3)));
+    else if(who.name) refs.push(fs.query(col,fs.where('memberName','==',who.name),fs.limit(3)));
     if(!refs.length)return function(){};
     return subscribeMulti(f,'memberRequests:v2:'+who.id+':'+who.name,refs,onNext,onError);
   }
@@ -9889,15 +9881,12 @@ if(form) form.reset();
     const who=identity(u),fs=f.fs,col=fs.collection(f.db,'memberNotifications'),refs=[];
     // Current writers always target the member id. Keep a tiny memberId fallback for older courier/admin rows.
     if(who.id){
-      refs.push(fs.query(col,fs.where('targetValue','==',who.id),fs.limit(8)));
-      refs.push(fs.query(col,fs.where('memberId','==',who.id),fs.limit(4)));
+      refs.push(fs.query(col,fs.where('targetValue','==',who.id),fs.limit(1)));
     }else if(who.name){
-      refs.push(fs.query(col,fs.where('memberName','==',who.name),fs.limit(6)));
+      refs.push(fs.query(col,fs.where('memberName','==',who.name),fs.limit(1)));
     }
-    // Broadcast history is intentionally short; notifications are operational, not an archive.
-    refs.push(fs.query(col,fs.where('targetType','==','all_members'),fs.limit(4)));
-    refs.push(fs.query(col,fs.where('targetType','==','all_branches'),fs.limit(2)));
-    if(who.branch)refs.push(fs.query(col,fs.where('targetValue','==',who.branch),fs.limit(4)));
+    // RADICAL READ MODE: latest global notice only. Older history can be loaded later on demand.
+    refs.push(fs.query(col,fs.where('targetType','==','all_members'),fs.limit(1)));
     return subscribeMulti(f,'memberNotifications:v2:'+who.id+':'+who.name+':'+who.branch,refs,onNext,onError);
   }
   window.__linkoScopedRealtimeHub={subscribeMemberRequests:subscribeMemberRequests,subscribeMemberNotifications:subscribeMemberNotifications};
@@ -10593,7 +10582,8 @@ if(form) form.reset();
       }
       const queryRef = f.fs.query(
         f.fs.collection(f.db, ORDERS_COLLECTION),
-        f.fs.where('memberId','==',memberRef.id)
+        f.fs.where('memberId','==',memberRef.id),
+        f.fs.limit(10)
       );
       memberOrdersUnsubscribe = window.__linkoReadHub.subscribeMemberOrders(f,memberRef.id,function(snapshot){
         const map = new Map();
@@ -10677,26 +10667,20 @@ if(form) form.reset();
         createdAt: f.fs.serverTimestamp(),
         source: 'member_order'
       };
-      let newCount = 0;
-      let actualMemberName = clean(user.name || user.fullName || user.username) || contact.name;
-      await f.fs.runTransaction(f.db, async function(transaction){
-        const orderSnap = await transaction.get(orderRef);
-        const memberSnap = await transaction.get(memberRef);
-        if(orderSnap.exists()) throw new Error('duplicate-order');
-        const memberData = memberSnap.exists() ? (memberSnap.data() || {}) : {};
-        actualMemberName = clean(memberData.name || memberData.fullName || memberData.username) || actualMemberName || 'عضو سوق المدينة';
-        payload.memberName = actualMemberName;
-        payload.memberUsername = clean(memberData.username || memberData.name || memberData.fullName) || contact.username || actualMemberName;
-        payload.memberPhone = clean(memberData.phone || memberData.mobile) || contact.phone;
-        payload.memberAddress = clean(memberData.address || memberData.area) || contact.address;
-        newCount = Number(memberData.ordersCount || memberData.orderCount || 0) + 1;
-        transaction.set(orderRef, payload);
-        transaction.set(memberRef, {
-          ordersCount: newCount,
-          orderCount: newCount,
-          updatedAt: f.fs.serverTimestamp()
-        }, {merge:true});
+      const actualMemberName = clean(user.name || user.fullName || user.username) || contact.name || 'عضو سوق المدينة';
+      payload.memberName = actualMemberName;
+      payload.memberUsername = clean(user.username || user.name || user.fullName) || contact.username || actualMemberName;
+      payload.memberPhone = clean(user.phone || user.mobile) || contact.phone;
+      payload.memberAddress = clean(user.address || user.area) || contact.address;
+      const newCount = Number(user.ordersCount || user.orderCount || 0) + 1;
+      const batch=f.fs.writeBatch(f.db);
+      batch.set(orderRef,payload);
+      batch.update(memberRef,{
+        ordersCount:f.fs.increment(1),
+        orderCount:f.fs.increment(1),
+        updatedAt:f.fs.serverTimestamp()
       });
+      await batch.commit();
 
       const mergedUser = Object.assign({}, user, {
         firebaseId: memberRef.id,
@@ -10752,14 +10736,7 @@ if(form) form.reset();
       return result;
     };
   }
-  const previousLogin = window.login;
-  if(typeof previousLogin === 'function'){
-    window.login = async function(){
-      const result = await previousLogin.apply(this, arguments);
-      setTimeout(startMemberOrdersListener, 500);
-      return result;
-    };
-  }
+  // RADICAL READ MODE: order history listener starts only when Orders page is explicitly opened.
   const previousLogout = window.logout;
   if(typeof previousLogout === 'function'){
     window.logout = function(){
@@ -11845,10 +11822,15 @@ body:not(.linko-dark) .info-box{
     );
     notificationUnsubs.push(unsub);
   }
-  async function startMemberRuntime(f,id,uid){clearListeners();const memRef=f.fs.doc(f.db,COL.members,id);memberUnsub=window.__linkoReadHub.subscribeMember(f,id,function(snap){if(!snap.exists())return;const current=currentMember()||{},u=normalizedMember(id,snap.data()||{},current.code||current.password,uid);saveMember(u);try{if(typeof fillUser==='function')fillUser()}catch(e){}},e=>console.warn('LINKO secure member listener skipped',e));const q=f.fs.query(f.fs.collection(f.db,COL.orders),f.fs.where('memberId','==',id));ordersUnsub=window.__linkoReadHub.subscribeMemberOrders(f,id,async function(snap){const count=snap.size;setCountUI(count);const u=currentMember();if(u){u.ordersCount=count;u.orderCount=count;saveMember(u)}try{await f.fs.setDoc(memRef,{ordersCount:count,orderCount:count,updatedAt:f.fs.serverTimestamp()},{merge:true})}catch(e){}},e=>console.warn('LINKO secure order counter skipped',e));await startNotifications(f,id,uid)}
+  async function startMemberRuntime(f,id,uid){
+    clearListeners();
+    // RADICAL READ MODE: zero background member/order/notification reads after login.
+    const current=currentMember()||{};
+    setCountUI(Number(current.ordersCount||current.orderCount||0));
+  }
   async function selfVerify(f,p,id,uid){const [k,m]=await Promise.all([f.fs.getDoc(f.fs.doc(f.db,COL.keys,p.key)),f.fs.getDoc(f.fs.doc(f.db,COL.members,id))]);const ok=k.exists()&&m.exists()&&clean((k.data()||{}).uid)===uid&&clean((m.data()||{}).authUid)===uid&&clean((m.data()||{}).authLoginKey)===p.key;try{localStorage.setItem('linko_security_member_verified_v2',ok?'1':'0')}catch(e){}return ok}
 
-  window.login=async function(e){if(e&&e.preventDefault)e.preventDefault();if(loginBusy)return false;const name=clean(document.getElementById('loginUsername')&&document.getElementById('loginUsername').value),code=clean(document.getElementById('loginPassword')&&document.getElementById('loginPassword').value);if(!name||!code){safeToast('أدخل الاسم والرمز');return false}loginBusy=true;const btn=document.querySelector('#loginForm button[type="submit"]'),old=btn?btn.innerHTML:'';if(btn){btn.disabled=true;btn.innerHTML='<span class="mi">sync</span> جاري التحقق...'}try{const f=await firebase(),p=await parts(name,code);try{if(f.auth.currentUser)await f.authMod.signOut(f.auth)}catch(e){}let keySnap=await f.fs.getDoc(f.fs.doc(f.db,COL.keys,p.key));if(!keySnap.exists()){const legacy=await legacyPrepareKey(f,name,code,p);if(!legacy)throw new Error('INVALID_LOGIN');keySnap=await f.fs.getDoc(f.fs.doc(f.db,COL.keys,p.key))}const kd=keySnap.data()||{};if(kd.active===false||clean(kd.authEmail)!==p.email)throw new Error('INVALID_LOGIN');const cred=await signInOrCreate(f,p),uid=clean(cred&&cred.user&&cred.user.uid);if(!uid)throw new Error('AUTH_UID_MISSING');const claimed=await claimMember(f,p,uid),memSnap=await f.fs.getDoc(f.fs.doc(f.db,COL.members,claimed.id)),u=normalizedMember(claimed.id,memSnap.data()||{},code,uid);saveMember(u);try{if(typeof fillUser==='function')fillUser()}catch(e){}try{if(typeof go==='function')go('homePage')}catch(e){}await startMemberRuntime(f,claimed.id,uid);if(Number(u.dataIdentityVersion||0)<2)linkOwnedData(f,claimed.id,uid).catch(e=>console.warn('LINKO data identity linking skipped',e));const ok=await selfVerify(f,p,claimed.id,uid);safeToast(ok?'تم تأمين هوية العضو وربط بياناته بنجاح':'تم الدخول، لكن فحص الحماية يحتاج إعادة محاولة');return false}catch(err){console.error('LINKO production member login failed',err);try{const f=await firebase();if(f.auth.currentUser)await f.authMod.signOut(f.auth)}catch(e){}safeToast(err&&err.message==='MEMBER_INACTIVE'?'الحساب موقوف':'الاسم أو الرمز غير صحيح');return false}finally{loginBusy=false;if(btn){btn.disabled=false;btn.innerHTML=old}}};
+  window.login=async function(e){if(e&&e.preventDefault)e.preventDefault();if(loginBusy)return false;const name=clean(document.getElementById('loginUsername')&&document.getElementById('loginUsername').value),code=clean(document.getElementById('loginPassword')&&document.getElementById('loginPassword').value);if(!name||!code){safeToast('أدخل الاسم والرمز');return false}loginBusy=true;const btn=document.querySelector('#loginForm button[type="submit"]'),old=btn?btn.innerHTML:'';if(btn){btn.disabled=true;btn.innerHTML='<span class="mi">sync</span> جاري التحقق...'}try{const f=await firebase(),p=await parts(name,code);try{if(f.auth.currentUser)await f.authMod.signOut(f.auth)}catch(e){}let keySnap=await f.fs.getDoc(f.fs.doc(f.db,COL.keys,p.key));if(!keySnap.exists()){const legacy=await legacyPrepareKey(f,name,code,p);if(!legacy)throw new Error('INVALID_LOGIN');keySnap=await f.fs.getDoc(f.fs.doc(f.db,COL.keys,p.key))}const kd=keySnap.data()||{};if(kd.active===false||clean(kd.authEmail)!==p.email)throw new Error('INVALID_LOGIN');const cred=await signInOrCreate(f,p),uid=clean(cred&&cred.user&&cred.user.uid);if(!uid)throw new Error('AUTH_UID_MISSING');let claimed;if(clean(kd.uid)===uid&&clean(kd.memberId)){const ms=await f.fs.getDoc(f.fs.doc(f.db,COL.members,clean(kd.memberId)));if(!ms.exists()||!activeMember(ms.data()||{}))throw new Error('MEMBER_INACTIVE');claimed={id:ms.id,data:ms.data()||{}};}else{claimed=await claimMember(f,p,uid);}const u=normalizedMember(claimed.id,claimed.data||{},code,uid);saveMember(u);try{if(typeof fillUser==='function')fillUser()}catch(e){}try{if(typeof go==='function')go('homePage')}catch(e){}await startMemberRuntime(f,claimed.id,uid);try{localStorage.setItem('linko_security_member_verified_v2','1')}catch(e){}safeToast('تم تسجيل الدخول بنجاح');return false}catch(err){console.error('LINKO production member login failed',err);try{const f=await firebase();if(f.auth.currentUser)await f.authMod.signOut(f.auth)}catch(e){}safeToast(err&&err.message==='MEMBER_INACTIVE'?'الحساب موقوف':'الاسم أو الرمز غير صحيح');return false}finally{loginBusy=false;if(btn){btn.disabled=false;btn.innerHTML=old}}};
   const logoutBeforeSecurity=window.logout;window.logout=function(){clearListeners();Promise.resolve().then(async function(){try{const f=await firebase();if(f.auth.currentUser)await f.authMod.signOut(f.auth)}catch(e){}});return typeof logoutBeforeSecurity==='function'?logoutBeforeSecurity.apply(this,arguments):undefined};
   const goBeforeSecurity=window.go;if(typeof goBeforeSecurity==='function')window.go=function(id){const r=goBeforeSecurity.apply(this,arguments);if(id==='notificationsPage'&&notificationsLoaded)setTimeout(renderNotifications,40);return r};
   window.renderNotes=renderNotifications;
@@ -11992,17 +11974,11 @@ body.linko-dark #linkoUrgentMemberNotificationPopup small{color:#fde68a!importan
     }catch(e){console.warn('LINKO urgent popup start skipped',e);}
   }
 
-  const previousLogin=window.login;
-  if(typeof previousLogin==='function'){
-    window.login=async function(){const result=await previousLogin.apply(this,arguments);setTimeout(start,80);return result;};
-  }
   const previousLogout=window.logout;
   if(typeof previousLogout==='function'){
     window.logout=function(){try{if(unsub){unsub();unsub=null;}}catch(e){}return previousLogout.apply(this,arguments);};
   }
-  document.addEventListener('DOMContentLoaded',function(){setTimeout(start,120);},{once:true});
-  window.addEventListener('pageshow',function(){setTimeout(start,80);});
-  setTimeout(start,0);
+  // RADICAL READ MODE: removed the second always-on notification listener.
 })();
 </script>
 <!-- ===== LINKO FINAL TWO ROOT FIXES: NOTIFICATIONS + EXACT MEMBER ORDER COUNT ONLY ===== -->
@@ -13806,6 +13782,10 @@ body.linko-dark .linko-driver-status-note{
 <!-- LINKO_FIRESTORE_READ_OPTIMIZATION_PHASE2_20260821 -->
 
 <!-- LINKO_READ_OPTIMIZATION_PHASE3_TARGETED_MEMBER_LOGIN_20260821 -->
+
+<!-- LINKO_RADICAL_READ_ARCHITECTURE_V1_20260821 -->
+<!-- LINKO_RADICAL_READ_ARCHITECTURE_V1B: orders lazy+limit10, order create zero-read batch, no exact counter listener, no public settings listener -->
+<!-- LINKO_RADICAL_READ_ARCHITECTURE_V1C: zero background member runtime, login fastpath, notifications max2 -->
 </body></html><style id="linkoSafePatchFinal">
 /* خانة التوصيل تحت بطاقة العضوية */
 #homeDeliveryStatusBox{
@@ -16825,11 +16805,8 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
   if(frame)frame.addEventListener('load',function(){retry(0);});
   retry(0);
 
-  firebase().then(function(f){
-    f.fs.onSnapshot(f.fs.doc(f.db,SETTINGS_COLLECTION,SETTINGS_DOC),function(snapshot){
-      if(snapshot.exists())applyPublicSettings(snapshot.data()||{});
-    },function(error){console.warn('LINKO 7.7 public settings listener failed',error);});
-  }).catch(function(error){console.warn('LINKO 7.7 public settings start failed',error);});
+  // RADICAL READ MODE: public settings use local cached values; no always-on Firestore listener.
+
 })();
 
 </script><!-- ===== LINKO STAGE 7.7: ORDER COUNT + WHATSAPP SMOOTH ROOT FIX ONLY ===== --><script id="linkoStage77OrderCountWhatsappSmoothOnlyFix">
@@ -17088,50 +17065,12 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
     finally{memberWriteBusy=false}
   }
   async function startExactCounter(force){
+    // RADICAL READ MODE: disabled collection-wide order counting.
     const user=getUser();
-    if(!user){
-      try{if(ordersUnsubscribe)ordersUnsubscribe()}catch(e){}
-      ordersUnsubscribe=null;watchedMemberId='';lastExactCount=-1;return;
-    }
-    try{
-      const f=await firebase();
-      const memberRef=await memberRefFor(f,user);
-      if(!memberRef)return;
-      if(!force&&ordersUnsubscribe&&watchedMemberId===memberRef.id)return;
-      try{if(ordersUnsubscribe)ordersUnsubscribe()}catch(e){}
-      watchedMemberId=memberRef.id;
-      lastExactCount=-1;
-      const q=f.fs.query(f.fs.collection(f.db,'orders'),f.fs.where('memberId','==',memberRef.id));
-      ordersUnsubscribe=window.__linkoReadHub.subscribeMemberOrders(f,memberRef.id,function(snapshot){
-        const exact=snapshot.size;
-        if(exact===lastExactCount){setCountUI(exact);return}
-        lastExactCount=exact;
-        publishExactCount(f,memberRef,exact);
-      },function(error){console.warn('LINKO exact order counter listener failed',error)});
-    }catch(error){console.warn('LINKO exact order counter start skipped',error)}
+    if(user)setCountUI(Number(user.ordersCount||user.orderCount||0));
   }
-  function restartCounterSoon(){
-    clearTimeout(restartTimer);
-    restartTimer=setTimeout(function(){startExactCounter(true)},80);
-  }
-
-  /* لا نزيد العداد يدويًا إطلاقًا؛ العدد يساوي عدد وثائق طلبات العضو الفعلية. */
-  const sendOrderBeforeExactSync=window.sendOrder;
-  if(typeof sendOrderBeforeExactSync==='function'){
-    window.__linkoLegacySendOrder11 =async function(){
-      const result=await sendOrderBeforeExactSync.apply(this,arguments);
-      restartCounterSoon();
-      return result;
-    };
-  }
-  const loginBeforeExactSync=window.login;
-  if(typeof loginBeforeExactSync==='function'){
-    window.login=async function(){
-      const result=await loginBeforeExactSync.apply(this,arguments);
-      restartCounterSoon();
-      return result;
-    };
-  }
+  function restartCounterSoon(){ const user=getUser(); if(user)setCountUI(Number(user.ordersCount||user.orderCount||0)); }
+  // Order count is maintained atomically on the member document when a new order is created.
   const logoutBeforeExactSync=window.logout;
   if(typeof logoutBeforeExactSync==='function'){
     window.logout=function(){
@@ -18868,7 +18807,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
 
   document.addEventListener('DOMContentLoaded',function(){
     hideTemporaryDate();
-    setTimeout(function(){ refreshCreatedDate(true); },120);
+    // RADICAL READ MODE: fetch authoritative creation date only when Profile is opened.
   });
 
   window.addEventListener('pageshow',function(){
