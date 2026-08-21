@@ -586,12 +586,16 @@ async function acceptOrder(id){
   }catch(err){
     console.error("DRIVER ACCEPT ORDER ERROR",err);
     const m=String(err&&err.message||""),c=String(err&&err.code||"");
-    toast(m==="ORDER_TAKEN"?"هذا الطلب استلمه مندوب آخر":
-      m==="NO_LOCATION"?"هذا الطلب لا يحتوي موقع تسليم":
-      m==="ORDER_MISSING"?"الطلب لم يعد موجوداً":
-      c.includes("permission-denied")?"تعذر قبول الطلب بسبب صلاحيات Firebase":
-      c.includes("unavailable")||c.includes("network")?"تعذر الاتصال بقاعدة البيانات، تحقق من الإنترنت":
-      "تعذر قبول الطلب الآن");
+    const detail=(c||"NO_CODE")+" | "+(m||"NO_MESSAGE");
+    const t=document.getElementById("toast");
+    if(t){
+      t.textContent="تشخيص قبول الطلب: "+detail;
+      t.classList.add("show");
+      clearTimeout(window.__tt);
+      window.__tt=setTimeout(()=>t.classList.remove("show"),12000);
+    }else{
+      toast("تشخيص قبول الطلب: "+detail);
+    }
   }finally{busy=false;loading(false)}
 }
 
