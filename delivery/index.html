@@ -534,15 +534,30 @@ function render(){
 async function startListeners(){
   const fb=await firebase();
   if(ordersUnsub)ordersUnsub();
-  ordersUnsub=fb.fs.onSnapshot(
-    fb.fs.query(fb.fs.collection(fb.db,ORDERS),fb.fs.limit(150)),
-    snap=>{
-      orders=snap.docs.map(d=>({id:d.id,...d.data()}));
-      orders.sort((a,b)=>Number(b.clientCreatedAtMs||0)-Number(a.clientCreatedAtMs||0));
-      render();
-    },
-    err=>{console.error(err);toast("تعذر قراءة الطلبات من Firebase")}
+  const sourceMaps={available:new Map(),mine:new Map()};
+  const emitOrders=()=>{
+    const merged=new Map();
+    sourceMaps.available.forEach((v,k)=>merged.set(k,v));
+    sourceMaps.mine.forEach((v,k)=>merged.set(k,v));
+    orders=Array.from(merged.values()).sort((a,b)=>Number(b.clientCreatedAtMs||0)-Number(a.clientCreatedAtMs||0));
+    render();
+  };
+  const availableQuery=fb.fs.query(
+    fb.fs.collection(fb.db,ORDERS),
+    fb.fs.where("status","in",["pending","new","جديد"]),
+    fb.fs.limit(40)
   );
+  const mineQuery=fb.fs.query(
+    fb.fs.collection(fb.db,ORDERS),
+    fb.fs.where("driverId","==",driver.id)
+  );
+  const unsubAvailable=fb.fs.onSnapshot(availableQuery,snap=>{
+    sourceMaps.available=new Map(snap.docs.map(d=>[d.id,{id:d.id,...d.data()}]));emitOrders();
+  },err=>{console.error("DRIVER AVAILABLE ORDERS ERROR",err);toast("تعذر قراءة الطلبات المتاحة")});
+  const unsubMine=fb.fs.onSnapshot(mineQuery,snap=>{
+    sourceMaps.mine=new Map(snap.docs.map(d=>[d.id,{id:d.id,...d.data()}]));emitOrders();
+  },err=>{console.error("DRIVER OWN ORDERS ERROR",err);toast("تعذر قراءة طلبات المندوب")});
+  ordersUnsub=()=>{try{unsubAvailable()}catch(e){}try{unsubMine()}catch(e){}};
   if(driverUnsub)driverUnsub();
   driverUnsub=fb.fs.onSnapshot(fb.fs.doc(fb.db,DRIVERS,driver.id),snap=>{
     if(!snap.exists()||String(snap.data().status||"").toLowerCase()!=="active"){
@@ -586,16 +601,10 @@ async function acceptOrder(id){
   }catch(err){
     console.error("DRIVER ACCEPT ORDER ERROR",err);
     const m=String(err&&err.message||""),c=String(err&&err.code||"");
-    const detail=(c||"NO_CODE")+" | "+(m||"NO_MESSAGE");
-    const t=document.getElementById("toast");
-    if(t){
-      t.textContent="تشخيص قبول الطلب: "+detail;
-      t.classList.add("show");
-      clearTimeout(window.__tt);
-      window.__tt=setTimeout(()=>t.classList.remove("show"),12000);
-    }else{
-      toast("تشخيص قبول الطلب: "+detail);
-    }
+    toast(m==="ORDER_TAKEN"?"هذا الطلب استلمه مندوب آخر":
+      m==="NO_LOCATION"?"هذا الطلب لا يحتوي موقع تسليم":
+      c.includes("resource-exhausted")?"الخدمة مزدحمة مؤقتاً، حاول بعد قليل":
+      "تعذر قبول الطلب الآن");
   }finally{busy=false;loading(false)}
 }
 
@@ -647,5 +656,6 @@ document.addEventListener("click",e=>{
 });
 restoreSession();
 </script>
+<!-- LINKO_DELIVERY_READ_OPTIMIZATION_PHASE1_20260821 -->
 </body>
 </html>
