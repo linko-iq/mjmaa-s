@@ -1,4 +1,6 @@
 <!DOCTYPE html>
+<!-- LINKO_RADICAL_READ_AUDIT_CLEAN_PHASE2_20260821: ROOT READS REMOVED, LAZY MEMBER DATA -->
+
 <!-- LINKO FOUNDATION PHASE 2D: SHARED NOTIFICATIONS + CHANGE REQUEST LISTENERS 20260820 -->
 <!-- Based on tested Phase 2C -->
 
@@ -7077,129 +7079,7 @@ document.addEventListener('click',function(){setTimeout(applyAdminFix,120);},tru
     return error;
   }
 
-  async function medinaHasPendingRequest(db,fs,name,phone){
-    /*
-      LINKO V74:
-      1) فحص مباشر سريع للمعرّف الحتمي للطلب الحالي.
-      2) فحوصات الطلبات القديمة بالتوازي بدل واحد وراء واحد.
-      3) القرار النهائي ضد التكرار يبقى داخل Transaction أيضاً.
-    */
-
-    const pendingId =
-      medinaPendingIdentityId(name,phone);
-
-    const exactRef =
-      fs.doc(db,SUB_COLLECTION,pendingId);
-
-    try{
-      const exactSnapshot =
-        fs.getDocFromServer
-          ? await fs.getDocFromServer(exactRef)
-          : await fs.getDoc(exactRef);
-
-      if(
-        exactSnapshot.exists() &&
-        medinaSamePendingIdentity(
-          exactSnapshot.data() || {},
-          name,
-          phone
-        )
-      ){
-        return true;
-      }
-    }catch(error){
-      /*
-        لا نعتبر فشل هذا الفحص إذناً بإرسال مكرر.
-        الـ Transaction أدناه يعيد فحص نفس الوثيقة بشكل ذري.
-      */
-      console.warn('MEDINA exact pending check skipped',error);
-    }
-
-    const normalizedPhone =
-      medinaNormalizePendingPhone(phone);
-
-    const checks = [];
-
-    if(normalizedPhone){
-      checks.push({
-        field:'normalizedPhone',
-        value:normalizedPhone
-      });
-    }
-
-    medinaPendingPhoneCandidates(phone).forEach(function(value){
-      checks.push({
-        field:'phone',
-        value:value
-      });
-    });
-
-    const seen = new Set();
-
-    const uniqueChecks =
-      checks.filter(function(check){
-        const key =
-          check.field + '|' + check.value;
-
-        if(seen.has(key)) return false;
-
-        seen.add(key);
-        return true;
-      });
-
-    /*
-      بدل تنفيذ الاستعلامات بالتسلسل،
-      ننفذها بالتوازي لتقليل زمن الانتظار.
-    */
-    const results =
-      await Promise.allSettled(
-        uniqueChecks.map(
-          async function(check){
-            const query =
-              fs.query(
-                fs.collection(db,SUB_COLLECTION),
-                fs.where(check.field,'==',check.value)
-              );
-
-            const snapshot =
-              fs.getDocsFromServer
-                ? await fs.getDocsFromServer(query)
-                : await fs.getDocs(query);
-
-            let found = false;
-
-            snapshot.forEach(
-              function(documentSnapshot){
-                if(found) return;
-
-                if(
-                  medinaSamePendingIdentity(
-                    documentSnapshot.data() || {},
-                    name,
-                    phone
-                  )
-                ){
-                  found = true;
-                }
-              }
-            );
-
-            return found;
-          }
-        )
-      );
-
-    for(const result of results){
-      if(
-        result.status === 'fulfilled' &&
-        result.value === true
-      ){
-        return true;
-      }
-    }
-
-    return false;
-  }
+  // READ AUDIT: obsolete preflight duplicate queries removed; deterministic request id is authoritative.
 
   async function linkoFirebase(){
     if(linkoFbPromise) return linkoFbPromise;
@@ -7366,158 +7246,7 @@ if(form) form.reset();
     };
   }
 
-  function adminPatchCode(){
-    return `
-(function(){
-  if(window.__linkoAdminFirestoreSubscriptionsRootFixed) return;
-  window.__linkoAdminFirestoreSubscriptionsRootFixed = true;
-  const LINKO_FIREBASE_CONFIG = ${JSON.stringify(LINKO_FIREBASE_CONFIG)};
-  const CANDIDATE_COLLECTIONS = ['subscriptionRequests'];
-  let fbPromise = null;
-  let collectionRows = {};
-  let listenersStarted = false;
-  function t(msg){ try{ if(typeof toast==='function') toast(msg); else console.log(msg); }catch(e){} }
-  function txt(v){ return String(v||'').trim(); }
-  function escapeHtml(v){ return String(v||'').replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
-  function quoteId(v){ return String(v||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
-  function nowText(){ try{return new Date().toLocaleString('ar-IQ')}catch(e){return new Date().toISOString()} }
-  function tsToText(v){ try{ if(v && typeof v.toDate==='function') return v.toDate().toLocaleString('ar-IQ'); }catch(e){} return ''; }
-  async function fb(){
-    if(fbPromise) return fbPromise;
-    fbPromise = Promise.all([
-      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),
-      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')
-    ]).then(([appMod,fs])=>{
-      const app = appMod.getApps().length ? appMod.getApps()[0] : appMod.initializeApp(LINKO_FIREBASE_CONFIG);
-      const db = fs.getFirestore(app);
-      return {db,fs};
-    });
-    return fbPromise;
-  }
-  function normalize(doc, collectionName){
-    const d = doc.data ? doc.data() : doc;
-    const name = d.name || d.fullName || d.memberName || d.username || '';
-    const phone = d.phone || d.mobile || '';
-    const area = d.area || d.address || d.location || '';
-    const code = d.code || d.password || d.pin || '';
-    const status = d.status || 'pending';
-    return {
-      id: doc.id || d.id || (collectionName + '_' + Math.random()),
-      firebaseId: doc.id || d.firebaseId || '',
-      collectionName,
-      name, phone, area, address: area, code,
-      status,
-      date: d.date || d.time || tsToText(d.createdAt) || '',
-      source: d.source || 'member_signup',
-      raw: d
-    };
-  }
-  function publish(){
-    let rows = [];
-    Object.keys(collectionRows).forEach(k=> rows = rows.concat(collectionRows[k] || []));
-    const seen = new Set();
-    rows = rows.filter(r=>{
-      if(!r.name && !r.phone) return false;
-      const key = (r.collectionName||'') + '::' + (r.firebaseId||r.id||'');
-      if(seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-    rows.sort((a,b)=> String(b.date||'').localeCompare(String(a.date||'')));
-    if(window.state){ window.state.requests = rows; }
-    try{ if(typeof render==='function') render(); else if(typeof buildNav==='function') buildNav(); }catch(e){ console.error('LINKO admin render after firestore failed', e); }
-  }
-  async function startListeners(){
-    if(listenersStarted) return;
-    listenersStarted = true;
-    try{
-      const {db,fs} = await fb();
-      CANDIDATE_COLLECTIONS.forEach(col=>{
-        try{
-          fs.onSnapshot(fs.collection(db,col), snap=>{
-            collectionRows[col] = snap.docs.map(d=>normalize(d,col));
-            publish();
-          }, err=>{ console.warn('LINKO Firestore listen failed:', col, err); });
-        }catch(e){ console.warn('LINKO listener setup failed:', col, e); }
-      });
-      t('تم ربط طلبات الاشتراك مع Firebase');
-    }catch(e){
-      console.error('LINKO admin Firebase init failed', e);
-      t('تعذر ربط طلبات الاشتراك مع Firebase');
-    }
-  }
-  window.pendingReq = function(){ try{return (window.state.requests||[]).filter(x=>x.status==='pending').length}catch(e){return 0} };
-  window.subscriptions = function(){
-    const qEl = document.getElementById('reqSearch');
-    const q = qEl ? qEl.value : '';
-    const list = (window.state.requests||[]).filter(r=>!q || [r.name,r.phone,r.area,r.code,r.status].join(' ').includes(q));
-    return '<div class="panel"><div class="panel-head"><div><h2>طلبات الاشتراك</h2><p>هذه الطلبات مقروءة مباشرة من Firebase Firestore.</p></div></div><div class="tools"><input class="input" id="reqSearch" oninput="render()" value="'+escapeHtml(q)+'" placeholder="بحث بالاسم أو الهاتف أو الرمز"><button class="btn secondary" onclick="linkoAdminRefreshRequests()">تحديث من Firebase</button></div><div class="sub-requests-grid">'+(list.length?list.map(r=>'<div class="admin-req-card"><h3>'+escapeHtml(r.name)+' <span class="status '+cls(r.status)+'">'+statusText(r.status)+'</span></h3><p>الهاتف: '+escapeHtml(r.phone)+'<br>العنوان: '+escapeHtml(r.area)+'<br>الرمز: '+escapeHtml(r.code)+'<br>'+escapeHtml(r.date||'')+'</p><div class="actions-row"><button class="btn mini" onclick="approveReq(\\''+quoteId(r.id)+'\\')">موافقة</button><button class="btn warn mini" onclick="rejectReq(\\''+quoteId(r.id)+'\\')">رفض</button><button class="btn danger mini" onclick="deleteReq(\\''+quoteId(r.id)+'\\')">حذف</button></div></div>').join(''):'<div class="empty">لا توجد طلبات اشتراك معلقة</div>')+'</div></div>';
-  };
-  function findReq(id){ return (window.state.requests||[]).find(x=>String(x.id)===String(id) || String(x.firebaseId)===String(id)); }
-  async function updateRequest(req, updates){
-    if(!req || !req.firebaseId) return;
-    const {db,fs} = await fb();
-    await fs.updateDoc(fs.doc(db, req.collectionName || 'subscriptionRequests', req.firebaseId), updates);
-  }
-  async function deleteRequest(req){
-    if(!req || !req.firebaseId) return;
-    const {db,fs} = await fb();
-    await fs.deleteDoc(fs.doc(db, req.collectionName || 'subscriptionRequests', req.firebaseId));
-  }
-  function saveApprovedMemberLocal(member){
-    try{
-      const key='lm_members';
-      let arr=JSON.parse(localStorage.getItem(key)||'[]');
-      if(!arr.some(m=>String(m.name||'').trim()===String(member.name||'').trim() && String(m.password||m.code||'')===String(member.password||member.code||''))){
-        arr.unshift(member);
-        localStorage.setItem(key, JSON.stringify(arr));
-      }
-    }catch(e){}
-  }
-  window.approveReq = async function(id){
-    const r = findReq(id); if(!r){t('لم يتم العثور على الطلب'); return;}
-    try{
-      const member={id:Date.now(),name:r.name,username:r.name,phone:r.phone,area:r.area,address:r.area,code:r.code,password:r.code,balance:0,status:'active',img:'',created:nowText(),source:'approved_subscription'};
-      window.state.members = window.state.members || [];
-      if(!window.state.members.some(m=>String(m.name)===String(member.name)&&String(m.code||m.password)===String(member.code))){ window.state.members.unshift(member); }
-      saveApprovedMemberLocal(member);
-      try{ const {db,fs}=await fb(); await fs.addDoc(fs.collection(db,'members'), member); }catch(e){ console.warn('member firestore save skipped',e); }
-      await updateRequest(r,{status:'approved',approvedAt:(await fb()).fs.serverTimestamp()});
-      try{ if(typeof log==='function') log('موافقة على عضو','تم قبول طلب '+r.name); if(typeof save==='function') save(); }catch(e){}
-      t('تمت الموافقة ونقل العضو');
-      try{ render(); }catch(e){}
-    }catch(e){ console.error(e); t('تعذر تنفيذ الموافقة'); }
-  };
-  window.rejectReq = async function(id){
-    const r = findReq(id); if(!r) return;
-    try{ await updateRequest(r,{status:'rejected',rejectedAt:(await fb()).fs.serverTimestamp()}); t('تم رفض الطلب'); }catch(e){ console.error(e); t('تعذر رفض الطلب'); }
-  };
-  window.deleteReq = async function(id){
-    const r = findReq(id); if(!r) return;
-    if(!confirm('تأكيد حذف الطلب من Firebase؟')) return;
-    try{ await deleteRequest(r); t('تم حذف الطلب'); }catch(e){ console.error(e); t('تعذر حذف الطلب'); }
-  };
-  window.clearRejected = async function(){
-    const rejected=(window.state.requests||[]).filter(x=>x.status==='rejected');
-    if(!rejected.length){t('لا توجد طلبات مرفوضة'); return;}
-    if(!confirm('تأكيد حذف جميع الطلبات المرفوضة من Firebase؟')) return;
-    try{ for(const r of rejected){ await deleteRequest(r); } t('تم حذف الطلبات المرفوضة'); }catch(e){ console.error(e); t('تعذر حذف بعض الطلبات'); }
-  };
-  window.clearAllSubscriptionRequests = async function(){
-    const all=(window.state.requests||[]);
-    if(!all.length){t('لا توجد طلبات'); return;}
-    if(!confirm('تأكيد حذف جميع طلبات الاشتراك من Firebase؟')) return;
-    try{ for(const r of all){ await deleteRequest(r); } t('تم حذف جميع الطلبات'); }catch(e){ console.error(e); t('تعذر حذف بعض الطلبات'); }
-  };
-  window.linkoAdminRefreshRequests = function(){ startListeners(); publish(); t('تم تحديث طلبات الاشتراك'); };
-  function waitReady(){ if(window.state && typeof window.render==='function'){ startListeners(); publish(); } else setTimeout(waitReady,200); }
-  waitReady();
-})();`;
-  }
-
-  // الإدارة تعتمد فقط على مستمع طلبات الاشتراك النهائي الموجود لاحقًا في الملف.
-  // نُبقي هنا ربط نموذج الاشتراك فقط، من دون حقن أي مستمع إضافي داخل لوحة الإدارة.
-  function patchAdminFrame(){ return; }
+  // READ AUDIT: disabled legacy admin subscription listener removed permanently.
 
   function init(){
     patchMemberRegister();
@@ -7708,8 +7437,6 @@ if(form) form.reset();
   const NOTIFICATIONS_COLLECTION = 'memberNotifications';
   let fbPromise = null;
   let currentRequestTypeClean = '';
-  let memberDocUnsub = null;
-  let notifUnsub = null;
 
   function clean(v){ return String(v == null ? '' : v).trim(); }
   function toastSafe(msg){ try{ if(typeof toast === 'function') toast(msg); else alert(msg); }catch(e){} }
@@ -7750,17 +7477,10 @@ if(form) form.reset();
   }
   function memberIdFromUser(u){ return clean(u && (u.firebaseId || u.memberId || u.docId || '')); }
   async function findMemberDocRef(user){
-    const f = await fb();
     const id = memberIdFromUser(user);
-    if(id) return f.fs.doc(f.db, MEMBERS_COLLECTION, id);
-    const name = clean(user && (user.name || user.username || user.fullName));
-    const code = clean(user && (user.code || user.password || user.pin));
-    if(name && code){
-      const q = f.fs.query(f.fs.collection(f.db, MEMBERS_COLLECTION), f.fs.where('name','==',name), f.fs.where('code','==',code), f.fs.limit(1));
-      const snap = await f.fs.getDocs(q);
-      if(!snap.empty) return snap.docs[0].ref;
-    }
-    return null;
+    if(!id) return null;
+    const f = await fb();
+    return f.fs.doc(f.db, MEMBERS_COLLECTION, id);
   }
   async function sendChangeRequest(type, text){
     const user = getUser();
@@ -7829,72 +7549,8 @@ if(form) form.reset();
     list.prepend(card);
   }
 
-  async function startMemberDocListener(){
-    const user = getUser(); if(!user) return;
-    try{ if(memberDocUnsub) memberDocUnsub(); }catch(e){}
-    try{
-      const f = await fb();
-      const ref = await findMemberDocRef(user); if(!ref) return;
-      memberDocUnsub = window.__linkoReadHub.subscribeMember(f,ref.id,function(snap){
-        if(!snap.exists()) return;
-        const d = snap.data() || {};
-        const merged = Object.assign({}, getUser() || {}, d, {
-          firebaseId: snap.id,
-          name: d.name || d.username || d.fullName || (getUser()||{}).name,
-          username: d.username || d.name || (getUser()||{}).username,
-          code: d.code || d.password || d.pin || (getUser()||{}).code,
-          password: d.password || d.code || d.pin || (getUser()||{}).password,
-          area: d.area || d.address || d.location || (getUser()||{}).area,
-          address: d.address || d.area || d.location || (getUser()||{}).address
-        });
-        setUser(merged);
-        try{ if(typeof fillUser === 'function') fillUser(); }catch(e){}
-      });
-    }catch(e){ console.warn('member doc listener failed', e); }
-  }
-  async function startNotifications(){
-    const user = getUser(); if(!user) return;
-    try{ if(notifUnsub) notifUnsub(); }catch(e){}
-    try{
-      const f = await fb();
-      const memberId = memberIdFromUser(user);
-      const memberName = clean(user.name || user.username || user.fullName);
-      const memberCode = clean(user.code || user.password || user.pin);
-      let constraints = [];
-      if(memberId) constraints = [f.fs.where('memberId','==',memberId)];
-      else constraints = [f.fs.where('memberName','==',memberName), f.fs.where('memberCode','==',memberCode)];
-      const q = f.fs.query(f.fs.collection(f.db, NOTIFICATIONS_COLLECTION), ...constraints, f.fs.limit(20));
-      notifUnsub = window.__linkoScopedRealtimeHub.subscribeMemberNotifications(f,user,function(snap){
-        snap.docChanges().forEach(function(ch){
-          if(ch.type !== 'added') return;
-          const seenKey = 'linko_seen_notif_' + ch.doc.id;
-          if(localStorage.getItem(seenKey)) return;
-          localStorage.setItem(seenKey,'1');
-          const d = ch.doc.data() || {};
-          try{
-            if(Array.isArray(window.notes)){
-              window.notes.unshift({title:d.title || 'إشعار من الإدارة', text:d.text || d.message || '', type:d.kind || 'info'});
-              if(typeof renderNotes === 'function') renderNotes();
-            }
-          }catch(e){}
-          toastSafe(d.text || d.message || d.title || 'وصلك إشعار من الإدارة');
-        });
-      });
-    }catch(e){ console.warn('notifications listener failed', e); }
-  }
-  const oldGoLazy = window.go;
-  if(typeof oldGoLazy === 'function'){
-    window.go = function(id){
-      const res = oldGoLazy.apply(this,arguments);
-      if(id==='notificationsPage') setTimeout(startNotifications,80);
-      return res;
-    };
-  }
-  const oldLogout = window.logout;
-  if(typeof oldLogout === 'function'){
-    window.logout = function(){ try{ if(memberDocUnsub) memberDocUnsub(); if(notifUnsub) notifUnsub(); }catch(e){} return oldLogout.apply(this, arguments); };
-  }
-  // RADICAL READ MODE: do not open legacy member/notification listeners automatically.
+  // READ AUDIT: member and notification realtime listeners removed here;
+  // the authoritative lazy notification path lives later in the file.
 
   function adminPatchCode(){
     return '(' + function(){
@@ -7962,165 +7618,7 @@ if(form) form.reset();
   if(window.__linkoPhase5RegressionGuardPhase4StableLogs) return;
   window.__linkoPhase5RegressionGuardPhase4StableLogs = true;
 
-  const FIREBASE_CONFIG = {
-    apiKey: "AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA",
-    authDomain: "medina-bazaar-e2c18.firebaseapp.com",
-    projectId: "medina-bazaar-e2c18",
-    storageBucket: "medina-bazaar-e2c18.firebasestorage.app",
-    messagingSenderId: "375693456199",
-    appId: "1:375693456199:web:2b36e0368ed898a7a11262"
-  };
-
-  let fbPromise=null;
-  let lastMemberKey='';
-  let lastApplyAt=0;
-
-  function clean(v){ return String(v == null ? '' : v).trim(); }
-  function money(v){
-    const n = Number(v || 0) || 0;
-    try { return n.toLocaleString('ar-IQ') + ' د.ع'; } catch(e){ return String(n) + ' د.ع'; }
-  }
-  function badFixedDate(v){
-    v = clean(v);
-    return !v || v === '2026/07/04' || v === '٢٠٢٦/٠٧/٠٤' || v === 'اليوم';
-  }
-  function dateText(v){
-    try{
-      if(!v) return '';
-      let d=null;
-      if(v && typeof v.toDate === 'function') d = v.toDate();
-      else if(v && typeof v.seconds === 'number') d = new Date(v.seconds * 1000);
-      else if(v instanceof Date) d = v;
-      else if(typeof v === 'number') d = new Date(v);
-      else if(typeof v === 'string'){
-        if(badFixedDate(v)) return '';
-        const t = Date.parse(v);
-        if(!Number.isNaN(t)) d = new Date(t); else return v;
-      }
-      if(!d || Number.isNaN(d.getTime())) return '';
-      return d.toLocaleDateString('ar-IQ',{year:'numeric',month:'2-digit',day:'2-digit'});
-    }catch(e){ return ''; }
-  }
-  function statusAr(v){
-    v=clean(v||'active').toLowerCase();
-    if(['active','approved','ok','مفعل'].includes(v)) return 'مفعل';
-    if(['stopped','blocked','inactive','disabled','موقوف'].includes(v)) return 'موقوف';
-    return v || 'مفعل';
-  }
-  function getCurrentUser(){
-    try{ if(typeof currentUser !== 'undefined' && currentUser) return currentUser; }catch(e){}
-    try{ if(window.currentUser) return window.currentUser; }catch(e){}
-    return null;
-  }
-  function setCurrentUser(u){
-    if(!u) return;
-    try{ if(typeof currentUser !== 'undefined') currentUser = u; }catch(e){}
-    try{ window.currentUser = u; }catch(e){}
-  }
-  function setText(id, value){ const el=document.getElementById(id); if(el) el.textContent=value; }
-  function setInfo(label,value){
-    document.querySelectorAll('#profilePage .info-box').forEach(function(box){
-      const s=box.querySelector('small');
-      if(s && clean(s.textContent)===label){ const b=box.querySelector('b'); if(b)b.textContent=value; }
-    });
-  }
-  function setStat(label,value){
-    document.querySelectorAll('#homePage .member-stat').forEach(function(box){
-      const s=box.querySelector('small');
-      if(s && clean(s.textContent)===label){ const b=box.querySelector('b'); if(b)b.textContent=value; }
-    });
-  }
-  async function fb(){
-    if(fbPromise) return fbPromise;
-    fbPromise = Promise.all([
-      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),
-      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')
-    ]).then(function(m){
-      const appMod=m[0], fs=m[1];
-      const app = appMod.getApps().length ? appMod.getApps()[0] : appMod.initializeApp(FIREBASE_CONFIG);
-      return {db:fs.getFirestore(app), fs:fs};
-    });
-    return fbPromise;
-  }
-  function memberKey(u){ return clean(u && (u.firebaseId || u.memberId || u.id || u.name || u.username)) + '|' + clean(u && (u.code || u.password || u.pin)); }
-  function applyMember(d){
-    if(!d) return;
-    const name = clean(d.name || d.username || d.fullName || '');
-    const phone = clean(d.phone || d.mobile || '');
-    const address = clean(d.address || d.area || d.location || '');
-    const balance = Number(d.balance || 0) || 0;
-    const created = dateText(d.createdAt) || dateText(d.approvedAt) || dateText(d.created) || dateText(d.joinedAt) || 'غير محدد';
-    const status = statusAr(d.status);
-    if(name){ setText('memberName', name); setText('profileName', name); setText('welcomeText','أهلاً، '+name); }
-    setText('profilePhone', phone);
-    setText('profileAddress', address);
-    setText('memberBalance', money(balance));
-    setText('profileBalance', money(balance));
-    setText('profileCreated', created);
-    setInfo('الرصيد', money(balance));
-    setInfo('تاريخ الإنشاء', created);
-    setStat('الرصيد', money(balance));
-    setStat('الحالة', status);
-    const ordersCount = Number(d.ordersCount || d.orderCount || 0) || 0;
-    setStat('الطلبات', String(ordersCount));
-    setText('memberOrdersCount', String(ordersCount));
-    setText('ordersCount', String(ordersCount));
-    setText('profileOrdersCount', String(ordersCount));
-  }
-  async function findMemberData(u){
-    if(!u) return null;
-    const f=await fb();
-    const id=clean(u.firebaseId || u.memberId || '');
-    if(id){
-      const snap=await f.fs.getDoc(f.fs.doc(f.db,'members',id));
-      if(snap.exists()) return Object.assign({firebaseId:snap.id}, snap.data());
-    }
-    const name=clean(u.name || u.username || u.fullName || '');
-    const code=clean(u.code || u.password || u.pin || '');
-    const qs=await f.fs.getDocs(f.fs.collection(f.db,'members'));
-    let found=null;
-    qs.forEach(function(doc){
-      if(found) return;
-      const d=doc.data()||{};
-      const okName=[d.name,d.username,d.fullName].map(clean).includes(name);
-      const okCode=[d.code,d.password,d.pin].map(clean).includes(code);
-      if(okName && okCode) found=Object.assign({firebaseId:doc.id},d);
-    });
-    return found;
-  }
-  async function refreshMemberFromFirebase(force){
-    const u=getCurrentUser();
-    if(!u) return;
-    const key=memberKey(u);
-    const now=Date.now();
-    if(!force && key===lastMemberKey && now-lastApplyAt<900) return;
-    lastMemberKey=key; lastApplyAt=now;
-    try{
-      const data=await findMemberData(u);
-      if(data){ const merged=Object.assign({},u,data); setCurrentUser(merged); applyMember(merged); }
-      else applyMember(u);
-    }catch(e){ console.warn('phase4 regression guard member refresh failed',e); applyMember(u); }
-  }
-
-  const oldFill = window.fillUser;
-  window.fillUser = function(){
-    let r;
-    try{ if(typeof oldFill==='function') r=oldFill.apply(this,arguments); }catch(e){ console.warn(e); }
-    return r;
-  };
-  const oldGo = window.go;
-  window.go = function(id){
-    let r;
-    try{ if(typeof oldGo==='function') r=oldGo.apply(this,arguments); }catch(e){ console.warn(e); }
-    return r;
-  };
-  const oldLogout = window.logout;
-  if(typeof oldLogout === 'function'){
-    window.logout = function(){ lastMemberKey=''; try{return oldLogout.apply(this,arguments);}catch(e){console.warn(e);} };
-  }
-  // RADICAL V2: no member Firestore read on generic DOM/load events.
-  /* LINKO FIRESTORE READS ROOT FIX: removed 2.5-second refreshMemberFromFirebase polling. */
-
+  // READ AUDIT: obsolete public member refresh/full members fallback removed permanently.
   // سجل العمليات للمرحلة الخامسة داخل لوحة الإدارة بدون تغيير الواجهة.
   function adminLogPatchCode(){ return '(' + function(){
     if(window.__linkoPhase5OpsLogGuard) return; window.__linkoPhase5OpsLogGuard=true;
@@ -8188,20 +7686,14 @@ if(form) form.reset();
     messagingSenderId: "375693456199",
     appId: "1:375693456199:web:2b36e0368ed898a7a11262"
   };
-  const MEMBERS_COLLECTION = 'members';
   const CHANGE_COLLECTION = 'memberChangeRequests';
-  const NOTIFICATIONS_COLLECTION = 'memberNotifications';
-  let fbPromise=null, reqUnsub=null, notifUnsub=null;
-  let memberRequestRows=[], memberNotifRows=[];
+  let fbPromise=null;
+  let memberRequestRows=[];
 
   function clean(v){ return String(v==null?'':v).trim(); }
   function esc(v){ return String(v==null?'':v).replace(/[&<>"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];}); }
-  function toastSafe(v){ try{ if(typeof toast==='function') toast(v); }catch(e){} }
   function getUser(){ try{ if(typeof currentUser!=='undefined' && currentUser) return currentUser; }catch(e){} try{ if(window.currentUser) return window.currentUser; }catch(e){} return null; }
-  function setUser(u){ if(!u) return; try{ if(typeof currentUser!=='undefined') currentUser=u; }catch(e){} try{ window.currentUser=u; }catch(e){} }
-  function moneySafe(n){ try{ if(typeof money==='function') return money(n); }catch(e){} return Number(n||0).toLocaleString('ar-IQ')+' د.ع'; }
   function toDateText(v){ try{ if(v && typeof v.toDate==='function') return v.toDate().toLocaleString('ar-IQ'); }catch(e){} return clean(v); }
-  function memberKey(u){ return [clean(u&&u.firebaseId), clean(u&&u.memberId), clean(u&&(u.name||u.username||u.fullName)), clean(u&&(u.code||u.password||u.pin))].join('|'); }
   async function fb(){
     if(fbPromise) return fbPromise;
     fbPromise = Promise.all([
@@ -8214,88 +7706,7 @@ if(form) form.reset();
     });
     return fbPromise;
   }
-  async function findMemberRef(f,u){
-    u=u||getUser(); if(!u) return null;
-    const id=clean(u.firebaseId||u.memberId||u.docId);
-    if(id) return f.fs.doc(f.db,MEMBERS_COLLECTION,id);
-    const name=clean(u.name||u.username||u.fullName), code=clean(u.code||u.password||u.pin);
-    if(name && code){
-      const q=f.fs.query(f.fs.collection(f.db,MEMBERS_COLLECTION), f.fs.where('name','==',name), f.fs.where('code','==',code), f.fs.limit(1));
-      const snap=await f.fs.getDocs(q);
-      if(!snap.empty) return snap.docs[0].ref;
-    }
-    return null;
-  }
-  function applyCountsToUI(orderCount){
-    const val=String(Number(orderCount||0));
-    ['memberOrdersCount','ordersCount','profileOrdersCount'].forEach(function(id){ const el=document.getElementById(id); if(el) el.textContent=val; });
-    try{
-      document.querySelectorAll('.member-stat').forEach(function(box){
-        const t=box.textContent||'';
-        if(t.indexOf('الطلبات')!==-1){ const b=box.querySelector('b'); if(b) b.textContent=val; }
-      });
-    }catch(e){}
-  }
-  function applyMemberCore(u){
-    if(!u) return;
-    const ordersCount=Number(u.ordersCount || u.orderCount || 0);
-    applyCountsToUI(ordersCount);
-    const bal=Number(u.balance||0);
-    const created=toDateText(u.createdAt)||toDateText(u.approvedAt)||u.created||u.date||'غير محدد';
-    const status=clean(u.status||'active')==='stopped'?'موقوف':'مفعل';
-    const set=function(id,v){ const el=document.getElementById(id); if(el) el.textContent=v; };
-    set('profileBalance', moneySafe(bal)); set('memberBalance', moneySafe(bal));
-    set('profileCreated', created);
-    try{
-      document.querySelectorAll('.info-box').forEach(function(box){
-        const s=box.querySelector('small'), b=box.querySelector('b'); if(!s||!b) return;
-        const tx=s.textContent||'';
-        if(tx.indexOf('الرصيد')!==-1) b.textContent=moneySafe(bal);
-        if(tx.indexOf('تاريخ')!==-1) b.textContent=created;
-      });
-      document.querySelectorAll('.member-stat').forEach(function(box){
-        const s=box.querySelector('small'), b=box.querySelector('b'); if(!s||!b) return;
-        const tx=s.textContent||'';
-        if(tx.indexOf('الرصيد')!==-1) b.textContent=moneySafe(bal);
-        if(tx.indexOf('الحالة')!==-1) b.textContent=status;
-      });
-    }catch(e){}
-  }
-  async function refreshMember(){
-    const u=getUser(); if(!u) return;
-    try{
-      const f=await fb(); const ref=await findMemberRef(f,u); if(!ref){applyMemberCore(u); return;}
-      const snap=await f.fs.getDoc(ref);
-      if(snap.exists()){
-        const d=Object.assign({firebaseId:snap.id, memberId:snap.id}, snap.data()||{});
-        const merged=Object.assign({},u,d);
-        setUser(merged); applyMemberCore(merged);
-      } else applyMemberCore(u);
-    }catch(e){ console.warn('member refresh failed',e); applyMemberCore(u); }
-  }
 
-  // إصلاح عدد الطلبات: عند إرسال الطلب عبر واتساب نزيد عداد العضو الحالي فقط.
-  const oldSendOrder = window.sendOrder;
-  window.__linkoLegacySendOrder6 = function(){
-    const before = (Array.isArray(window.cart)?window.cart.length:0);
-    let r;
-    try{ r = oldSendOrder && oldSendOrder.apply(this, arguments); }catch(e){ throw e; }
-    setTimeout(async function(){
-      try{
-        const u=getUser(); if(!u) return;
-        // لا نزيد إذا السلة كانت فارغة قبل الإرسال.
-        if(before===0) return;
-        const f=await fb(); const ref=await findMemberRef(f,u); if(!ref) return;
-        const oldCount=Number(u.ordersCount || u.orderCount || 0);
-        const newCount=oldCount+1;
-        await f.fs.updateDoc(ref,{ordersCount:newCount, orderCount:newCount, updatedAt:f.fs.serverTimestamp()});
-        const merged=Object.assign({},u,{ordersCount:newCount,orderCount:newCount}); setUser(merged); applyCountsToUI(newCount);
-      }catch(e){ console.warn('order count update skipped',e); }
-    },700);
-    return r;
-  };
-
-  // تنظيف قائمة طلبات حسابي: تعرض طلبات العضو الحالي فقط من Firebase، لا الطلبات المحلية القديمة المشتركة.
   function renderMemberRequestsClean(){
     const list=document.getElementById('requestsList'); if(!list) return;
     const rows=memberRequestRows.filter(function(r){ return r.status==='pending'; });
@@ -8310,53 +7721,23 @@ if(form) form.reset();
   }
   async function startMemberRequests(){
     const u=getUser(); if(!u) return;
-    try{ if(reqUnsub) reqUnsub(); }catch(e){}
     try{
       const f=await fb();
-      reqUnsub=window.__linkoScopedRealtimeHub.subscribeMemberRequests(f,u,function(snap){
-        memberRequestRows=[];
-        snap.forEach(function(doc){ const d=doc.data()||{}; if(requestMatchesUser(d,u)) memberRequestRows.push({id:doc.id,type:d.type||d.title,details:d.details||d.newValue,status:d.status||'pending',date:d.date||toDateText(d.createdAt)||toDateText(d.updatedAt)}); });
-        renderMemberRequestsClean();
-      });
-    }catch(e){ console.warn('member requests listener failed',e); renderMemberRequestsClean(); }
+      const id=clean(u.firebaseId||u.memberId||u.docId);
+      if(!id){memberRequestRows=[];renderMemberRequestsClean();return;}
+      const q=f.fs.query(f.fs.collection(f.db,CHANGE_COLLECTION),f.fs.where('memberId','==',id),f.fs.limit(3));
+      const snap=await f.fs.getDocs(q);
+      memberRequestRows=[];
+      snap.forEach(function(doc){const d=doc.data()||{};if(requestMatchesUser(d,u))memberRequestRows.push({id:doc.id,type:d.type||d.title,details:d.details||d.newValue,status:d.status||'pending',date:d.date||toDateText(d.createdAt)||toDateText(d.updatedAt)})});
+      renderMemberRequestsClean();
+    }catch(e){console.warn('member requests load failed',e);renderMemberRequestsClean();}
   }
   window.renderRequests = function(){ renderMemberRequestsClean(); };
 
-  // إشعارات العضو: نعرض إشعارات Firebase في صفحة الإشعارات وليس فقط toast.
-  function renderNotesClean(){
-    const list=document.getElementById('notesList'); if(!list) return;
-    const rows=memberNotifRows;
-    list.innerHTML = rows.length ? rows.map(function(n){
-      return '<div class="note-card"><div class="note-top"><div><h3>'+esc(n.title||'إشعار')+'</h3><p>'+esc(n.text||'')+'</p><small>'+esc(n.date||'')+'</small></div><span class="status '+(n.kind==='ok'?'ok':'info')+'">'+(n.kind==='ok'?'مهم':'معلومة')+'</span></div></div>';
-    }).join('') : '<div class="empty-card">لا توجد إشعارات حالياً</div>';
-    const badge=document.getElementById('notifBadge'); if(badge) badge.textContent=String(rows.length);
-  }
-  function notifMatchesUser(d,u){
-    const id=clean(u.firebaseId||u.memberId||u.docId), name=clean(u.name||u.username||u.fullName), code=clean(u.code||u.password||u.pin);
-    if(id && clean(d.memberId)===id) return true;
-    return clean(d.memberName)===name && clean(d.memberCode)===code;
-  }
-  async function startNotificationsClean(){
-    const u=getUser(); if(!u) return;
-    try{ if(notifUnsub) notifUnsub(); }catch(e){}
-    try{
-      const f=await fb();
-      notifUnsub=window.__linkoScopedRealtimeHub.subscribeMemberNotifications(f,u,function(snap){
-        memberNotifRows=[];
-        snap.forEach(function(doc){ const d=doc.data()||{}; if(notifMatchesUser(d,u)) memberNotifRows.push({id:doc.id,title:d.title,text:d.text||d.message,kind:d.kind||'info',date:toDateText(d.createdAt)||toDateText(d.time)}); });
-        memberNotifRows.sort(function(a,b){return String(b.date).localeCompare(String(a.date));});
-        renderNotesClean();
-      });
-    }catch(e){ console.warn('member notifications listener failed',e); renderNotesClean(); }
-  }
-  window.renderNotes = function(){ renderNotesClean(); };
-
   const oldGo=window.go;
-  window.go=function(id){ const r=oldGo&&oldGo.apply(this,arguments); setTimeout(function(){ if(id==='profilePage'){startMemberRequests(); renderMemberRequestsClean();} if(id==='notificationsPage'){startNotificationsClean(); renderNotesClean();} },80); return r; };
+  window.go=function(id){ const r=oldGo&&oldGo.apply(this,arguments); if(id==='profilePage')setTimeout(function(){startMemberRequests();renderMemberRequestsClean();},80); return r; };
   const oldLogout=window.logout;
-  if(typeof oldLogout==='function') window.logout=function(){ try{if(reqUnsub)reqUnsub(); if(notifUnsub)notifUnsub(); memberRequestRows=[]; memberNotifRows=[];}catch(e){} return oldLogout.apply(this,arguments); };
-  // RADICAL READ MODE: no member requests/notifications/background member refresh on login or startup.
-  /* LINKO FIRESTORE READS ROOT FIX: removed duplicate 2.5-second refreshMember polling. */
+  if(typeof oldLogout==='function') window.logout=function(){memberRequestRows=[];return oldLogout.apply(this,arguments);};
 
   // تنظيف إدارة الأعضاء داخل iframe: مصدر الأعضاء Firebase فقط، بدون دمج state.members القديم الذي يسبب التكرار.
   function adminPatch(){ return '('+function(){
@@ -8386,381 +7767,30 @@ if(form) form.reset();
   setInterval(patchFrame,1200);
   window.addEventListener('load',function(){setTimeout(patchFrame,500);setTimeout(patchFrame,1600);});
 })();
-</script><script id="linkoPhase5MenuNotificationsOrdersRecheckedFinal">
+</script><!-- READ_AUDIT_REMOVED_OBSOLETE:linkoPhase5MenuNotificationsOrdersRecheckedFinal --><!-- ===== LINKO PHASE 5 ROOT FIX: ORDERS COUNT + ADMIN MEMBERS LIVE SOURCE ===== --><!-- READ_AUDIT_REMOVED_OBSOLETE:linkoPhase5OrdersAndAdminMembersRootFix --><!-- ===== LINKO FINAL ROOT PATCH: orders counter, stable created date, wallet editor ===== --><!-- ===== LINKO FINAL STABLE FIX: orders count + balance + created date without blinking ===== --><script id="linkoFinalStableMemberLocalDisplayOnly">
 (function(){
-  if(window.__linkoPhase5MenuNotificationsOrdersRecheckedFinal) return;
-  window.__linkoPhase5MenuNotificationsOrdersRecheckedFinal = true;
-
-  const FIREBASE_CONFIG={apiKey:"AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA",authDomain:"medina-bazaar-e2c18.firebaseapp.com",projectId:"medina-bazaar-e2c18",storageBucket:"medina-bazaar-e2c18.firebasestorage.app",messagingSenderId:"375693456199",appId:"1:375693456199:web:2b36e0368ed898a7a11262"};
-  const MEMBERS_COLLECTION='members';
-  const NOTIFICATIONS_COLLECTION='memberNotifications';
-  let fbPromise=null, notifUnsubFinal=null, finalNotifs=[];
-
-  function clean(v){return String(v==null?'':v).trim();}
-  function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];});}
-  function toastSafe(v){try{ if(typeof toast==='function') toast(v); else console.log(v);}catch(e){}}
-  function getUser(){try{ if(typeof currentUser!=='undefined' && currentUser) return currentUser;}catch(e){} try{ if(window.currentUser) return window.currentUser;}catch(e){} return null;}
-  function setUser(u){if(!u)return; try{ if(typeof currentUser!=='undefined') currentUser=u;}catch(e){} try{window.currentUser=u;}catch(e){}}
-  function memberKey(u){u=u||getUser()||{}; return clean(u.firebaseId||u.memberId||u.docId||u.id) || (clean(u.name||u.username||u.fullName)+'__'+clean(u.code||u.password||u.pin));}
-  function notifReadKey(id){return 'linko_notif_read_'+memberKey()+'_'+id;}
-  function dateText(v){try{if(v&&typeof v.toDate==='function')return v.toDate().toLocaleString('ar-IQ');}catch(e){} return clean(v);}
-  function isNotificationsOpen(){const p=document.getElementById('notificationsPage'); return !!(p && p.classList.contains('active'));}
-  async function fb(){ if(fbPromise) return fbPromise; fbPromise=Promise.all([import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')]).then(function(m){const appMod=m[0],fs=m[1]; const app=appMod.getApps().length?appMod.getApps()[0]:appMod.initializeApp(FIREBASE_CONFIG); return {db:fs.getFirestore(app),fs:fs};}); return fbPromise;}
-  function notifMatchesUser(d,u){u=u||getUser()||{}; const id=clean(u.firebaseId||u.memberId||u.docId||u.id), name=clean(u.name||u.username||u.fullName), code=clean(u.code||u.password||u.pin); if(id && clean(d.memberId)===id) return true; if(clean(d.targetValue)==='all'||clean(d.target)==='all') return true; return clean(d.memberName)===name && clean(d.memberCode)===code;}
-  function setBadge(n){const b=document.getElementById('notifBadge'); if(!b)return; n=Number(n||0); b.textContent=String(n); b.style.display=n>0?'grid':'none';}
-  function unreadCount(){return finalNotifs.filter(n=>!localStorage.getItem(notifReadKey(n.id))).length;}
-  function updateNotifBadge(){setBadge(unreadCount());}
-  function markNotificationsRead(){finalNotifs.forEach(n=>localStorage.setItem(notifReadKey(n.id),'1')); setBadge(0);}
-  function renderNotesFinal(){
-    const list=document.getElementById('notesList'); if(!list)return;
-    const rows=finalNotifs.slice().sort((a,b)=>String(b.sort||b.date).localeCompare(String(a.sort||a.date)));
-    list.innerHTML = rows.length ? rows.map(function(n){return '<div class="note-card"><div class="note-top"><div><h3>'+esc(n.title||'إشعار')+'</h3><p>'+esc(n.text||'')+'</p><small>'+esc(n.date||'')+'</small></div><span class="status '+(n.kind==='ok'?'ok':'info')+'">'+(n.kind==='ok'?'مهم':'معلومة')+'</span></div></div>';}).join('') : '<div class="empty-card">لا توجد إشعارات حالياً</div>';
-    if(isNotificationsOpen()) markNotificationsRead(); else updateNotifBadge();
-  }
-  async function startNotifFinal(){
-    const u=getUser(); if(!u)return;
-    try{if(notifUnsubFinal)notifUnsubFinal();}catch(e){}
-    try{
-      const f=await fb();
-      notifUnsubFinal=window.__linkoScopedRealtimeHub.subscribeMemberNotifications(f,u,function(snap){
-        const rows=[]; snap.forEach(function(doc){const d=doc.data()||{}; if(notifMatchesUser(d,u)) rows.push({id:doc.id,title:d.title||'إشعار من الإدارة',text:d.text||d.message||'',kind:d.kind||d.type||'info',date:dateText(d.createdAt)||dateText(d.time)||dateText(d.date),sort:(d.createdAt&&d.createdAt.seconds)||Date.now()});});
-        finalNotifs=rows;
-        renderNotesFinal();
-      });
-    }catch(e){console.warn('final notifications listener failed',e);}
-  }
-  window.renderNotes=function(){renderNotesFinal();};
-
-  // عداد الطلبات الحقيقي: عند نجاح إرسال واتساب/فتح نافذة الطلب، نزيد عدد طلبات العضو مرة واحدة فقط.
-  function visibleCartCount(){
-    const ids=['cartItemsCount','floatCount'];
-    for(const id of ids){const el=document.getElementById(id); const n=parseInt(clean(el&&el.textContent).replace(/[^0-9]/g,''),10); if(n>0)return n;}
-    const list=document.getElementById('cartList'); if(list){const count=list.querySelectorAll('.cart-item').length; if(count>0)return count;}
-    try{ if(Array.isArray(window.cart) && window.cart.length)return window.cart.length; }catch(e){}
-    return 0;
-  }
-  async function findMemberRef(f,u){
-    const id=clean(u.firebaseId||u.memberId||u.docId||u.id); if(id)return f.fs.doc(f.db,MEMBERS_COLLECTION,id);
-    const name=clean(u.name||u.username||u.fullName), code=clean(u.code||u.password||u.pin);
-    if(!name||!code)return null;
-    const q=f.fs.query(f.fs.collection(f.db,MEMBERS_COLLECTION), f.fs.where('name','==',name), f.fs.limit(10));
-    const snap=await f.fs.getDocs(q); let found=null; snap.forEach(function(d){const x=d.data()||{}; if(clean(x.code||x.password||x.pin)===code) found=d.ref;});
-    return found;
-  }
-  function setOrderCountUI(n){['memberOrdersCount','ordersCount','profileOrdersCount'].forEach(id=>{const el=document.getElementById(id); if(el)el.textContent=String(Number(n||0));});}
-  async function incrementOrderCountOnce(key){
-    const u=getUser(); if(!u)return;
-    const once='linko_order_count_done_'+memberKey(u)+'_'+key; if(localStorage.getItem(once))return; localStorage.setItem(once,'1');
-    try{
-      const f=await fb(); const ref=await findMemberRef(f,u); if(!ref)return;
-      const old=Number(u.ordersCount||u.orderCount||0),next=old+1;
-      await f.fs.updateDoc(ref,{ordersCount:f.fs.increment(1),orderCount:f.fs.increment(1),updatedAt:f.fs.serverTimestamp()});
-      const merged=Object.assign({},u,{ordersCount:next,orderCount:next}); setUser(merged); setOrderCountUI(next);
-      try{ if(typeof fillUser==='function') fillUser(); }catch(e){}
-    }catch(e){console.warn('final order counter failed',e);}
-  }
-  const oldSendOrderFinal=window.sendOrder;
-  if(typeof oldSendOrderFinal==='function'){
-    window.__linkoLegacySendOrder7 =function(){
-      const before=visibleCartCount(); const stamp=Date.now(); let r;
-      try{r=oldSendOrderFinal.apply(this,arguments);}catch(e){throw e;}
-      setTimeout(function(){
-        const modal=document.getElementById('orderModal'); const success=before>0 || (modal&&modal.classList.contains('show'));
-        if(success) incrementOrderCountOnce(stamp);
-      },900);
-      return r;
-    };
-  }
-
-  // إصلاح أول ضغطة داخل قائمة الإدارة: تثبيت openSec ومنع تعارض إعادة الرسم أثناء الضغط.
-  function adminMenuPatchCode(){return '('+function(){
-    if(window.__linkoAdminMenuFirstTapStableFinal)return; window.__linkoAdminMenuFirstTapStableFinal=true;
-    let navBusy=false;
-    const oldOpen=window.openSec;
-    window.openSec=function(id){
-      if(navBusy)return; navBusy=true;
-      try{
-        if(typeof active!=='undefined') active=id;
-        const s=(window.sections||sections||[]).find(x=>x[0]===id);
-        const title=document.getElementById('pageTitle'), desc=document.getElementById('pageDesc'), side=document.getElementById('sidebar');
-        if(s&&title)title.textContent=s[2]; if(s&&desc)desc.textContent=s[3]; if(side)side.classList.remove('open');
-        requestAnimationFrame(function(){try{ if(typeof render==='function')render(); }catch(e){} setTimeout(function(){navBusy=false;},120);});
-      }catch(e){navBusy=false; try{ if(typeof oldOpen==='function')oldOpen.apply(this,arguments);}catch(_){} }
-    };
-    document.addEventListener('click',function(ev){
-      const btn=ev.target&&ev.target.closest&&ev.target.closest('nav button[onclick*="openSec"]'); if(!btn)return;
-      const on=btn.getAttribute('onclick')||''; const m=on.match(/openSec\('([^']+)'\)/); if(!m)return;
-      ev.preventDefault(); ev.stopPropagation(); window.openSec(m[1]);
-    },true);
-  }.toString()+')();';}
-  function patchAdminFrame(){
-    const fr=document.getElementById('linkoAdminFrame'); if(!fr||!fr.__linkoAdminLoaded||!fr.contentDocument||!fr.contentDocument.body)return;
-    try{const w=fr.contentWindow,doc=fr.contentDocument; if(w.__linkoAdminMenuFirstTapStableFinal)return; const sc=doc.createElement('script'); sc.textContent=adminMenuPatchCode(); doc.body.appendChild(sc);}catch(e){}
-  }
-
-  const oldGoFinal=window.go;
-  window.go=function(id){
-    const r=oldGoFinal&&oldGoFinal.apply(this,arguments);
-    setTimeout(function(){
-      if(id==='notificationsPage'){startNotifFinal(); renderNotesFinal(); markNotificationsRead();}
-      patchAdminFrame();
-    },120);
-    return r;
-  };
-  const oldLogoutFinal=window.logout; if(typeof oldLogoutFinal==='function') window.logout=function(){try{if(notifUnsubFinal)notifUnsubFinal(); finalNotifs=[]; setBadge(0);}catch(e){} return oldLogoutFinal.apply(this,arguments);};
-  setInterval(function(){if(isNotificationsOpen()) markNotificationsRead(); patchAdminFrame();},1800);
-  // RADICAL READ MODE: notification history is lazy; no background listener on login/startup.
-})();
-</script><!-- ===== LINKO PHASE 5 ROOT FIX: ORDERS COUNT + ADMIN MEMBERS LIVE SOURCE ===== --><script id="linkoPhase5OrdersAndAdminMembersRootFix">
-(function(){
-  if(window.__linkoPhase5OrdersAndAdminMembersRootFix) return;
-  window.__linkoPhase5OrdersAndAdminMembersRootFix = true;
-
-  const FIREBASE_CONFIG = {
-    apiKey: "AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA",
-    authDomain: "medina-bazaar-e2c18.firebaseapp.com",
-    projectId: "medina-bazaar-e2c18",
-    storageBucket: "medina-bazaar-e2c18.firebasestorage.app",
-    messagingSenderId: "375693456199",
-    appId: "1:375693456199:web:2b36e0368ed898a7a11262"
-  };
-  const MEMBERS_COLLECTION = 'members';
-  let fbPromise=null;
-  function clean(v){return String(v==null?'':v).trim();}
-  function moneySafe(n){ try{ if(typeof money==='function') return money(Number(n||0)); }catch(e){} return Number(n||0).toLocaleString('ar-IQ')+' د.ع'; }
-  function getUser(){ try{return JSON.parse(localStorage.getItem('linko_current_member')||localStorage.getItem('lm_current_user')||'null');}catch(e){return null;} }
-  function setUser(u){ try{localStorage.setItem('linko_current_member',JSON.stringify(u)); localStorage.setItem('lm_current_user',JSON.stringify(u)); window.currentUser=u;}catch(e){} }
-  function memberKey(u){return clean(u&&(u.firebaseId||u.memberId||u.docId||u.id||u.name||u.username))+'_'+clean(u&&(u.code||u.password||u.pin));}
-  async function fb(){
-    if(fbPromise) return fbPromise;
-    fbPromise=Promise.all([
-      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),
-      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')
-    ]).then(function(mods){
-      const appMod=mods[0], fs=mods[1];
-      const app=appMod.getApps().length?appMod.getApps()[0]:appMod.initializeApp(FIREBASE_CONFIG);
-      return {db:fs.getFirestore(app),fs:fs};
-    });
-    return fbPromise;
-  }
-  async function findMemberRef(f,u){
-    u=u||getUser(); if(!u) return null;
-    const id=clean(u.firebaseId||u.memberId||u.docId);
-    if(id) return f.fs.doc(f.db,MEMBERS_COLLECTION,id);
-    const name=clean(u.name||u.username||u.fullName), code=clean(u.code||u.password||u.pin);
-    if(!name||!code) return null;
-    const q=f.fs.query(f.fs.collection(f.db,MEMBERS_COLLECTION), f.fs.where('name','==',name), f.fs.limit(20));
-    const snap=await f.fs.getDocs(q); let found=null;
-    snap.forEach(function(d){const x=d.data()||{}; if(clean(x.code||x.password||x.pin)===code) found=d.ref;});
-    return found;
-  }
-  function setOrderUI(n){
-    const val=String(Number(n||0));
-    ['memberOrdersCount','ordersCount','profileOrdersCount'].forEach(function(id){const el=document.getElementById(id); if(el) el.textContent=val;});
-    try{document.querySelectorAll('.member-stat,.info-box').forEach(function(box){const s=box.querySelector('small'), b=box.querySelector('b'); if(s&&b&&(s.textContent||'').indexOf('طلبات')!==-1)b.textContent=val;});}catch(e){}
-  }
-  function currentCartCount(){
-    try{ const c=JSON.parse(localStorage.getItem('lm_cart')||'[]'); if(Array.isArray(c)&&c.length) return c.length; }catch(e){}
-    try{ const c=JSON.parse(localStorage.getItem('cart')||'[]'); if(Array.isArray(c)&&c.length) return c.length; }catch(e){}
-    const ids=['cartItemsCount','floatCount'];
-    for(const id of ids){const el=document.getElementById(id); const n=parseInt((el&&el.textContent||'').replace(/[^0-9]/g,''),10); if(n>0) return n;}
-    const list=document.getElementById('cartList'); if(list){const n=list.querySelectorAll('.cart-item').length; if(n>0)return n;}
-    return 0;
-  }
-  async function incrementOrderCountRoot(){
-    const u=getUser(); if(!u) return;
-    const k=memberKey(u), now=Date.now();
-    const last=Number(localStorage.getItem('linko_last_order_count_'+k)||0);
-    if(last && now-last<3500) return;
-    localStorage.setItem('linko_last_order_count_'+k,String(now));
-    try{
-      const f=await fb(); const ref=await findMemberRef(f,u); if(!ref) return;
-      const old=Number(u.ordersCount||u.orderCount||0), next=old+1;
-      await f.fs.updateDoc(ref,{ordersCount:f.fs.increment(1),orderCount:f.fs.increment(1),updatedAt:f.fs.serverTimestamp()});
-      const merged=Object.assign({},u,{firebaseId:ref.id,memberId:ref.id,ordersCount:next,orderCount:next});
-      setUser(merged); setOrderUI(next);
-      try{ if(typeof fillUser==='function') fillUser(); }catch(e){}
-      try{ if(typeof window.linkoRefreshMember==='function') window.linkoRefreshMember(); }catch(e){}
-    }catch(e){console.warn('order count root update failed',e);}
-  }
-
-  // المسار المضمون لعداد الطلبات: أي فتح رابط واتساب طلب، قبل تفريغ السلة، يزيد عداد العضو مرة واحدة.
-  const oldOpen=window.open;
-  window.open=function(url,target,features){
-    try{
-      const u=String(url||'');
-      if((u.indexOf('wa.me')!==-1 || u.indexOf('api.whatsapp.com')!==-1) && currentCartCount()>0){
-        setTimeout(incrementOrderCountRoot,0);
-      }
-    }catch(e){}
-    return oldOpen.apply(window,arguments);
-  };
-
-  function adminPatchCode(){return '('+function(){
-    if(window.__linkoPhase5AdminMembersLiveRootFix) return;
-    window.__linkoPhase5AdminMembersLiveRootFix=true;
-    const FIREBASE_CONFIG={apiKey:"AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA",authDomain:"medina-bazaar-e2c18.firebaseapp.com",projectId:"medina-bazaar-e2c18",storageBucket:"medina-bazaar-e2c18.firebasestorage.app",messagingSenderId:"375693456199",appId:"1:375693456199:web:2b36e0368ed898a7a11262"};
-    const MEMBERS_COLLECTION='members';
-    let fbPromise=null, memberRows=[], memberUnsub=null, busy=false;
-    function clean(v){return String(v==null?'':v).trim();}
-    function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];});}
-    function moneySafe(n){try{if(typeof money==='function')return money(Number(n||0));}catch(e){} return Number(n||0).toLocaleString('ar-IQ')+' د.ع';}
-    function clsSafe(s){try{return typeof cls==='function'?cls(s):'';}catch(e){return '';}}
-    function statusTextSafe(s){try{return typeof statusText==='function'?statusText(s):((s==='stopped'||s==='inactive')?'موقوف':'مفعل');}catch(e){return ((s==='stopped'||s==='inactive')?'موقوف':'مفعل');}}
-    function memberInitial(name){return (name||'ع').trim().slice(0,1).toUpperCase();}
-    function msg(v){try{if(typeof toast==='function')toast(v);else console.log(v);}catch(e){}}
-    async function fb(){if(fbPromise)return fbPromise; fbPromise=Promise.all([import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')]).then(function(mods){const appMod=mods[0],fs=mods[1]; const app=appMod.getApps().length?appMod.getApps()[0]:appMod.initializeApp(FIREBASE_CONFIG); return {db:fs.getFirestore(app),fs:fs};}); return fbPromise;}
-    function norm(doc){const d=doc.data()||{}; const status=clean(d.status||'active'); return {id:doc.id,firebaseId:doc.id,name:d.name||d.fullName||d.username||'',username:d.username||d.name||'',phone:d.phone||'',area:d.area||d.address||'',address:d.address||d.area||'',code:d.code||d.password||d.pin||'',password:d.password||d.code||d.pin||'',balance:Number(d.balance||0),status:status,img:d.img||d.avatar||d.photo||'',deleted:!!d.deleted||status==='deleted'||status==='removed',raw:d};}
-    function publish(){try{window.state=window.state||{}; window.state.members=memberRows.filter(function(m){return !m.deleted;});}catch(e){} if(window.active==='members'){try{render();}catch(e){}}}
-    function startMembers(){ if(memberUnsub)return; fb().then(function(f){memberUnsub=f.fs.onSnapshot(f.fs.collection(f.db,MEMBERS_COLLECTION),function(snap){memberRows=[]; snap.forEach(function(doc){const m=norm(doc); if(!m.deleted) memberRows.push(m);}); publish();},function(err){console.warn('admin members live failed',err);});}).catch(function(e){console.warn(e);});}
-    window.members=function(){
-      const q=(document.getElementById('memSearch')&&document.getElementById('memSearch').value)||'';
-      const list=memberRows.filter(function(m){return !m.deleted && (!q || [m.name,m.phone,m.area,m.code,m.username,m.password].join(' ').includes(q));});
-      return '<div class="panel"><div class="panel-head"><div><h2>إدارة الأعضاء</h2><p>كل عضو ببطاقة مرتبة مع أزرار تعديل وحذف.</p></div></div><div class="tools"><input class="input" id="memSearch" oninput="render()" value="'+esc(q)+'" placeholder="بحث بالاسم أو الهاتف أو الرمز"><select><option>كل الحالات</option></select><button class="btn secondary" onclick="render()">بحث</button></div><div class="members-admin-grid">'+(list.length?list.map(function(m){return '<div class="admin-member-box"><div class="member-admin-head"><div class="member-admin-avatar">'+(m.img?'<img src="'+esc(m.img)+'" alt="'+esc(m.name)+'" loading="lazy" decoding="async">':memberInitial(m.name))+'</div><div class="member-admin-info"><h3>'+esc(m.name||'-')+' <span class="status '+clsSafe(m.status)+'">'+statusTextSafe(m.status)+'</span></h3><p>الهاتف: '+esc(m.phone||'-')+'<br>العنوان: '+esc(m.area||'-')+'</p></div></div><div class="member-admin-meta"><div class="member-admin-pill"><small>اسم المستخدم</small>'+esc(m.username||m.name||'-')+'</div><div class="member-admin-pill"><small>كلمة السر</small>'+esc(m.password||m.code||'-')+'</div><div class="member-admin-pill"><small>الرمز</small>'+esc(m.code||'-')+'</div><div class="member-admin-pill"><small>الرصيد</small>'+moneySafe(m.balance)+'</div></div><div class="actions-row"><button class="btn secondary mini" data-member-action="edit" data-id="'+esc(m.id)+'">تعديل</button><button class="btn danger mini" data-member-action="delete" data-id="'+esc(m.id)+'">حذف العضو</button><button class="btn mini" data-member-action="wallet" data-id="'+esc(m.id)+'">إضافة رصيد</button><button class="btn warn mini" data-member-action="toggle" data-id="'+esc(m.id)+'">'+(m.status==='active'?'إيقاف':'تفعيل')+'</button></div></div>';}).join(''):'<div class="empty">لا يوجد أعضاء</div>')+'</div></div>';
-    };
-    async function updateMember(id,payload){const f=await fb(); await f.fs.updateDoc(f.fs.doc(f.db,MEMBERS_COLLECTION,id),Object.assign({},payload,{updatedAt:f.fs.serverTimestamp()}));}
-    window.deleteMember=function(id){if(!id)return; if(!confirm('تأكيد حذف العضو؟'))return; updateMember(String(id),{deleted:true,status:'deleted'}).then(function(){msg('تم حذف العضو');}).catch(function(e){console.error(e);msg('تعذر حذف العضو');});};
-    window.toggleMember=function(id){const m=memberRows.find(function(x){return String(x.id)===String(id);}); if(!m)return msg('العضو غير متوفر'); const ns=m.status==='active'?'stopped':'active'; updateMember(String(id),{status:ns}).then(function(){msg(ns==='active'?'تم تفعيل العضو':'تم إيقاف العضو');}).catch(function(e){console.error(e);msg('تعذر تحديث الحالة');});};
-    window.quickWallet=function(id){const m=memberRows.find(function(x){return String(x.id)===String(id);}); if(!m)return msg('العضو غير متوفر'); const val=prompt('أدخل مبلغ الرصيد الحالي/الجديد', String(m.balance||0)); if(val==null)return; const amount=Number(String(val).replace(/[^0-9.-]/g,'')); if(!amount)return msg('المبلغ غير صحيح'); updateMember(String(id),{balance:Number(m.balance||0)+amount}).then(function(){msg('تم تحديث الرصيد');}).catch(function(e){console.error(e);msg('تعذر تحديث الرصيد');});};
-    window.openMember=function(id){const m=memberRows.find(function(x){return String(x.id)===String(id);}); if(!m)return msg('العضو غير متوفر'); try{ if(typeof openModal==='function'){openModal('تعديل العضو','<div class="field"><label>الاسم</label><input id="editMemberName" value="'+esc(m.name)+'"></div><div class="field"><label>الهاتف</label><input id="editMemberPhone" value="'+esc(m.phone)+'"></div><div class="field"><label>العنوان</label><input id="editMemberArea" value="'+esc(m.area)+'"></div><div class="field"><label>الرمز</label><input id="editMemberCode" value="'+esc(m.code)+'"></div><button class="btn full" data-member-action="save-edit" data-id="'+esc(m.id)+'">حفظ التعديل</button>'); return;} }catch(e){} msg('فتح تعديل العضو');};
-    document.addEventListener('click',function(ev){const btn=ev.target&&ev.target.closest&&ev.target.closest('[data-member-action]'); if(!btn)return; ev.preventDefault(); ev.stopPropagation(); const act=btn.getAttribute('data-member-action'), id=btn.getAttribute('data-id'); if(act==='delete')return window.deleteMember(id); if(act==='toggle')return window.toggleMember(id); if(act==='wallet')return window.quickWallet(id); if(act==='edit')return window.openMember(id); if(act==='save-edit'){const payload={name:clean(document.getElementById('editMemberName')&&document.getElementById('editMemberName').value),username:clean(document.getElementById('editMemberName')&&document.getElementById('editMemberName').value),phone:clean(document.getElementById('editMemberPhone')&&document.getElementById('editMemberPhone').value),area:clean(document.getElementById('editMemberArea')&&document.getElementById('editMemberArea').value),address:clean(document.getElementById('editMemberArea')&&document.getElementById('editMemberArea').value),code:clean(document.getElementById('editMemberCode')&&document.getElementById('editMemberCode').value),password:clean(document.getElementById('editMemberCode')&&document.getElementById('editMemberCode').value)}; updateMember(String(id),payload).then(function(){msg('تم حفظ بيانات العضو'); try{if(typeof closeModal==='function')closeModal();}catch(e){}}).catch(function(e){console.error(e);msg('تعذر حفظ العضو');});}
-    },true);
-    startMembers();
-    window.linkoMembersLiveRefresh=startMembers;
-  }.toString()+')();'}
-  function patchAdminFrame(){
-    const fr=document.getElementById('linkoAdminFrame'); if(!fr||!fr.__linkoAdminLoaded||!fr.contentDocument||!fr.contentDocument.body)return;
-    try{const w=fr.contentWindow,doc=fr.contentDocument; if(!w.__linkoPhase5AdminMembersLiveRootFix){const sc=doc.createElement('script'); sc.textContent=adminPatchCode(); doc.body.appendChild(sc);}else if(typeof w.linkoMembersLiveRefresh==='function')w.linkoMembersLiveRefresh();}catch(e){}
-  }
-  /* MEDINA V68: إدارة الأعضاء أصبحت مباشرة داخل iframe؛ لا حقن خارجي. */
-})();
-</script><!-- ===== LINKO FINAL ROOT PATCH: orders counter, stable created date, wallet editor ===== --><!-- ===== LINKO FINAL STABLE FIX: orders count + balance + created date without blinking ===== --><script id="linkoFinalStableOrdersBalanceCreatedNoBlink">
-(function(){
-  if(window.__linkoFinalStableOrdersBalanceCreatedNoBlink) return;
-  window.__linkoFinalStableOrdersBalanceCreatedNoBlink = true;
-
-  const FIREBASE_CONFIG={apiKey:"AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA",authDomain:"medina-bazaar-e2c18.firebaseapp.com",projectId:"medina-bazaar-e2c18",storageBucket:"medina-bazaar-e2c18.firebasestorage.app",messagingSenderId:"375693456199",appId:"1:375693456199:web:2b36e0368ed898a7a11262"};
-  const MEMBERS='members';
-  let fbPromise=null;
-
-  function clean(v){return String(v==null?'':v).trim();}
-  function num(v){const n=Number(String(v==null?'':v).replace(/[^0-9.-]/g,'')); return Number.isFinite(n)?n:0;}
-  function moneyText(n){try{ if(typeof money==='function') return money(Number(n||0)); }catch(e){} return Number(n||0).toLocaleString('ar-IQ')+' د.ع';}
+  'use strict';
+  if(window.__linkoFinalStableMemberLocalDisplayOnly) return;
+  window.__linkoFinalStableMemberLocalDisplayOnly=true;
+  function clean(v){return String(v==null?'':v).trim()}
+  function moneyText(n){try{if(typeof money==='function')return money(Number(n||0))}catch(e){}return Number(n||0).toLocaleString('ar-IQ')+' د.ع'}
   function dateText(v){
-    try{
-      if(!v) return '';
-      let d=null;
-      if(v&&typeof v.toDate==='function') d=v.toDate();
-      else if(v&&typeof v.seconds==='number') d=new Date(v.seconds*1000);
-      else if(v instanceof Date) d=v;
-      else if(typeof v==='number') d=new Date(v);
-      else if(typeof v==='string'){
-        const t=Date.parse(v);
-        if(!Number.isNaN(t)) d=new Date(t); else return v;
-      }
-      if(!d||Number.isNaN(d.getTime())) return '';
-      return d.toLocaleDateString('ar-IQ',{year:'numeric',month:'2-digit',day:'2-digit'});
-    }catch(e){return '';}
+    try{if(!v)return '';let d=null;if(v&&typeof v.toDate==='function')d=v.toDate();else if(v&&typeof v.seconds==='number')d=new Date(v.seconds*1000);else if(v instanceof Date)d=v;else{const t=new Date(v);if(!Number.isNaN(t.getTime()))d=t}return d&&!Number.isNaN(d.getTime())?d.toLocaleDateString('ar-IQ',{year:'numeric',month:'2-digit',day:'2-digit'}):''}catch(e){return ''}
   }
-  function getUser(){
-    try{if(typeof currentUser!=='undefined'&&currentUser)return currentUser;}catch(e){}
-    try{if(window.currentUser)return window.currentUser;}catch(e){}
-    try{return JSON.parse(localStorage.getItem('linko_current_member')||localStorage.getItem('lm_current_user')||'null');}catch(e){return null;}
-  }
-  function setUser(u){
-    if(!u)return;
-    try{if(typeof currentUser!=='undefined') currentUser=u;}catch(e){}
-    try{window.currentUser=u; localStorage.setItem('linko_current_member',JSON.stringify(u)); localStorage.setItem('lm_current_user',JSON.stringify(u));}catch(e){}
-  }
-  async function fb(){
-    if(fbPromise)return fbPromise;
-    fbPromise=Promise.all([import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')]).then(function(m){
-      const appMod=m[0],fs=m[1]; const app=appMod.getApps().length?appMod.getApps()[0]:appMod.initializeApp(FIREBASE_CONFIG);
-      return {db:fs.getFirestore(app),fs:fs};
-    });
-    return fbPromise;
-  }
-  async function memberRef(f,u){
-    u=u||getUser(); if(!u)return null;
-    const id=clean(u.firebaseId||u.memberId||u.docId||u.id); if(id)return f.fs.doc(f.db,MEMBERS,id);
-    const name=clean(u.name||u.username||u.fullName), code=clean(u.code||u.password||u.pin);
-    if(!name||!code)return null;
-    const q=f.fs.query(f.fs.collection(f.db,MEMBERS),f.fs.where('name','==',name),f.fs.limit(20));
-    const snap=await f.fs.getDocs(q); let ref=null;
-    snap.forEach(function(d){const x=d.data()||{}; if(clean(x.code||x.password||x.pin)===code) ref=d.ref;});
-    return ref;
-  }
-  function setText(id,v){const el=document.getElementById(id); if(el&&el.textContent!==String(v))el.textContent=String(v);}
-  function setBox(selector,label,value){
-    try{document.querySelectorAll(selector).forEach(function(box){const s=box.querySelector('small'),b=box.querySelector('b'); if(s&&b&&(s.textContent||'').indexOf(label)!==-1&&b.textContent!==String(value))b.textContent=String(value);});}catch(e){}
-  }
-  function applyMember(d){
-    if(!d)return;
-    const orders=Number(d.ordersCount||d.orderCount||0)||0;
-    const bal=Number(d.balance||0)||0;
+  function getUser(){try{if(window.currentUser)return window.currentUser}catch(e){}try{return JSON.parse(localStorage.getItem('linko_current_member')||localStorage.getItem('lm_current_user')||'null')}catch(e){return null}}
+  function setText(id,v){const el=document.getElementById(id);if(el&&el.textContent!==String(v))el.textContent=String(v)}
+  function setBox(selector,label,value){try{document.querySelectorAll(selector).forEach(function(box){const s=box.querySelector('small'),b=box.querySelector('b');if(s&&b&&(s.textContent||'').indexOf(label)!==-1&&b.textContent!==String(value))b.textContent=String(value)})}catch(e){}}
+  function apply(){
+    const d=getUser();if(!d)return;
+    const orders=Number(d.ordersCount||d.orderCount||0)||0,bal=Number(d.balance||0)||0;
     const created=dateText(d.createdAt)||dateText(d.approvedAt)||dateText(d.joinedAt)||dateText(d.created)||dateText(d.date)||'';
-    setText('memberOrdersCount',orders); setText('ordersCount',orders); setText('profileOrdersCount',orders);
-    setBox('.member-stat','الطلبات',orders); setBox('.info-box','طلبات',orders);
-    setText('memberBalance',moneyText(bal)); setText('profileBalance',moneyText(bal));
-    setBox('.member-stat','الرصيد',moneyText(bal)); setBox('.info-box','الرصيد',moneyText(bal));
-    if(created){ setText('profileCreated',created); setBox('.info-box','تاريخ',created); }
+    setText('memberOrdersCount',orders);setText('ordersCount',orders);setText('profileOrdersCount',orders);
+    setBox('.member-stat','الطلبات',orders);setBox('.info-box','طلبات',orders);
+    setText('memberBalance',moneyText(bal));setText('profileBalance',moneyText(bal));setBox('.member-stat','الرصيد',moneyText(bal));setBox('.info-box','الرصيد',moneyText(bal));
+    if(created){setText('profileCreated',created);setBox('.info-box','تاريخ',created)}
   }
-  async function refreshMember(){
-    try{const f=await fb(); const ref=await memberRef(f); if(!ref)return; const snap=await f.fs.getDoc(ref); if(!snap.exists())return; const d=Object.assign({firebaseId:ref.id,memberId:ref.id},snap.data()||{}); setUser(Object.assign({},getUser()||{},d)); applyMember(d);}catch(e){console.warn('stable member refresh failed',e);}
-  }
-
-  function cartSnapshot(){
-    try{const a=JSON.parse(localStorage.getItem('lm_cart')||'[]'); if(Array.isArray(a)&&a.length)return a;}catch(e){}
-    try{const a=JSON.parse(localStorage.getItem('cart')||'[]'); if(Array.isArray(a)&&a.length)return a;}catch(e){}
-    const countEl=document.getElementById('cartItemsCount'); const n=num(countEl&&countEl.textContent); if(n>0)return new Array(n).fill({});
-    const list=document.getElementById('cartList'); if(list){const n2=list.querySelectorAll('.cart-item').length; if(n2>0)return new Array(n2).fill({});}
-    return [];
-  }
-  function cartTotal(items){return (items||[]).reduce(function(sum,x){const price=Number(x.price||x.unitPrice||x.amount||0)||0; const q=Number(x.qty||x.quantity||1)||1; return sum+(price*q);},0);}
-  function localOrdersLen(){try{const a=JSON.parse(localStorage.getItem('lm_orders')||'[]'); return Array.isArray(a)?a.length:0;}catch(e){return 0;}}
-  function latestOrderId(){try{const a=JSON.parse(localStorage.getItem('lm_orders')||'[]'); return Array.isArray(a)&&a[0]?String(a[0].id||a[0].date||a.length):String(a.length||0);}catch(e){return String(Date.now());}}
-
-  async function finalizeOrder(cartBefore, ordersBefore){
-    const ordersAfter=localOrdersLen();
-    if(!cartBefore.length && ordersAfter<=ordersBefore) return;
-    const u=getUser(); if(!u)return;
-    const orderKey='linko_order_saved_'+clean(u.firebaseId||u.memberId||u.name||u.username)+'_'+latestOrderId();
-    if(localStorage.getItem(orderKey)) return;
-    localStorage.setItem(orderKey,'1');
-    try{
-      const f=await fb(); const ref=await memberRef(f,u); if(!ref)return;
-      const snap=await f.fs.getDoc(ref); const d=snap.exists()?(snap.data()||{}):{};
-      const oldCount=Number(d.ordersCount||d.orderCount||0)||0;
-      const nextCount=Math.max(oldCount+1, ordersAfter);
-      const total=cartTotal(cartBefore);
-      const oldBalance=Number(d.balance||0)||0;
-      const payload={ordersCount:nextCount,orderCount:nextCount,updatedAt:f.fs.serverTimestamp()};
-      if(total>0) payload.balance=Math.max(0, oldBalance-total);
-      await f.fs.setDoc(ref,payload,{merge:true});
-      const merged=Object.assign({},u,d,payload,{firebaseId:ref.id,memberId:ref.id});
-      setUser(merged); applyMember(merged);
-    }catch(e){console.warn('order count/balance final failed',e);}
-  }
-
-  const previousSendOrder=window.sendOrder;
-  if(typeof previousSendOrder==='function'){
-    window.__linkoLegacySendOrder8 =function(){
-      const beforeCart=cartSnapshot();
-      const beforeOrders=localOrdersLen();
-      let r;
-      try{r=previousSendOrder.apply(this,arguments);}catch(e){throw e;}
-      setTimeout(function(){finalizeOrder(beforeCart,beforeOrders);},1200);
-      setTimeout(refreshMember,2200);
-      return r;
-    };
-  }
-
-  const oldGo=window.go;
-  if(typeof oldGo==='function'){
-    window.go=function(id){const r=oldGo.apply(this,arguments); if(id==='homePage'||id==='profilePage')setTimeout(refreshMember,150); return r;};
-  }
-  document.addEventListener('DOMContentLoaded',function(){setTimeout(refreshMember,500);});
-  window.addEventListener('load',function(){setTimeout(refreshMember,700);});
+  const oldGo=window.go;if(typeof oldGo==='function')window.go=function(id){const r=oldGo.apply(this,arguments);if(id==='homePage'||id==='profilePage')setTimeout(apply,0);return r};
+  document.addEventListener('DOMContentLoaded',apply,{once:true});
 })();
 </script><script id="linkoPhase5PreStage6BalanceAvatarRootFix">
 (function(){
@@ -8963,78 +7993,7 @@ if(form) form.reset();
     if(typeof old==='function') window[name]=function(){ if(blockIfNoBalance()) return false; return old.apply(this,arguments); };
   });
 
-  function adminPatchCode(){ return '('+function(){
-    if(window.__linkoAdminWalletReportsFinalFix) return;
-    window.__linkoAdminWalletReportsFinalFix=true;
-    const FIREBASE_CONFIG={apiKey:"AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA",authDomain:"medina-bazaar-e2c18.firebaseapp.com",projectId:"medina-bazaar-e2c18",storageBucket:"medina-bazaar-e2c18.firebasestorage.app",messagingSenderId:"375693456199",appId:"1:375693456199:web:2b36e0368ed898a7a11262"};
-    const MEMBERS='members';
-    let fbPromise=null, liveMembers=[];
-    function clean(v){return String(v==null?'':v).trim();}
-    function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];});}
-    function arToEn(s){return String(s||'').replace(/[٠-٩]/g,function(d){return '٠١٢٣٤٥٦٧٨٩'.indexOf(d);}).replace(/[۰-۹]/g,function(d){return '۰۱۲۳۴۵۶۷۸۹'.indexOf(d);});}
-    function num(v){if(typeof v==='number')return isFinite(v)?v:0; const n=Number(arToEn(v).replace(/[^0-9.-]/g,'')); return isFinite(n)?n:0;}
-    function money(n){try{if(typeof window.money==='function')return window.money(Number(n||0));}catch(e){} return Number(n||0).toLocaleString('ar-IQ')+' د.ع';}
-    function msg(v){try{if(typeof toast==='function')toast(v); else alert(v);}catch(e){}}
-    async function fb(){if(fbPromise)return fbPromise; fbPromise=Promise.all([import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')]).then(function(m){const appMod=m[0],fs=m[1]; const app=appMod.getApps().length?appMod.getApps()[0]:appMod.initializeApp(FIREBASE_CONFIG); return {db:fs.getFirestore(app),fs:fs};}); return fbPromise;}
-    function isActive(d){const s=clean(d.status||'active'); return !(d.deleted===true||s==='deleted'||s==='removed');}
-    function updateReportNumbers(){
-      const active=liveMembers.filter(function(m){return isActive(m.raw||m);});
-      try{window.state=window.state||{}; window.state.members=active.map(function(m){return Object.assign({},m.raw||m,{id:m.id,balance:num((m.raw||m).balance)});});}catch(e){}
-      const count=active.length;
-      const total=active.reduce(function(a,m){return a+num((m.raw||m).balance);},0);
-      document.querySelectorAll('.kpi').forEach(function(kpi){
-        const s=kpi.querySelector('small'), b=kpi.querySelector('b'); if(!s||!b)return;
-        const label=s.textContent||'';
-        /* LINKO V31: لا تكتب على بطاقة عدد الأعضاء في الرئيسية من دالة التقارير. */
-        if(label.indexOf('إجمالي الأرصدة')!==-1) b.textContent=money(total);
-      });
-    }
-    async function startLiveReports(){
-      try{
-        const f=await fb();
-        f.fs.onSnapshot(f.fs.collection(f.db,MEMBERS),function(snap){
-          liveMembers=[]; snap.forEach(function(doc){liveMembers.push({id:doc.id,raw:doc.data()||{}});});
-          updateReportNumbers();
-        });
-      }catch(e){console.warn('reports live count failed',e);}
-    }
-
-    function showWalletDialog(member){
-      const id=member&&member.id; if(!id)return msg('العضو غير متوفر');
-      const old=document.getElementById('linkoWalletDialogFix'); if(old)old.remove();
-      const wrap=document.createElement('div');
-      wrap.id='linkoWalletDialogFix';
-      wrap.style.cssText='position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;padding:18px;direction:rtl;font-family:Cairo,system-ui,sans-serif;';
-      wrap.innerHTML='<div style="width:min(420px,96vw);background:#fff;color:#111827;border-radius:24px;padding:18px;box-shadow:0 25px 80px rgba(0,0,0,.35)"><h3 style="margin:0 0 8px;font-size:22px;font-weight:900">تعديل رصيد العضو</h3><p style="margin:0 0 12px;color:#475569;font-weight:800">الرصيد الحالي ظاهر داخل الحقل. اكتب الرصيد الجديد ثم اضغط حفظ.</p><input id="linkoWalletInputFix" inputmode="numeric" type="text" value="'+esc(String(num(member.balance)))+'" style="width:100%;height:54px;border:1px solid #94a3b8;border-radius:16px;padding:0 14px;font-size:20px;font-weight:900;direction:ltr;text-align:center;background:#fff;color:#020617;outline:0"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px"><button id="linkoWalletCancelFix" style="height:50px;border:0;border-radius:16px;background:#e5e7eb;color:#111827;font-weight:900;font-size:17px">إلغاء</button><button id="linkoWalletSaveFix" style="height:50px;border:0;border-radius:16px;background:#111827;color:#fff;font-weight:900;font-size:17px">حفظ</button></div></div>';
-      document.body.appendChild(wrap);
-      const input=wrap.querySelector('#linkoWalletInputFix');
-      setTimeout(function(){try{input.focus(); input.select();}catch(e){}},80);
-      wrap.querySelector('#linkoWalletCancelFix').onclick=function(){wrap.remove();};
-      wrap.onclick=function(e){if(e.target===wrap)wrap.remove();};
-      wrap.querySelector('#linkoWalletSaveFix').onclick=async function(){
-        const amount=num(input.value);
-        if(amount<0){msg('المبلغ غير صحيح');return;}
-        try{const f=await fb(); await f.fs.updateDoc(f.fs.doc(f.db,MEMBERS,String(id)),{balance:amount,updatedAt:f.fs.serverTimestamp()}); wrap.remove(); msg('تم تحديث الرصيد'); updateReportNumbers();}
-        catch(e){console.error(e); msg('تعذر تحديث الرصيد');}
-      };
-    }
-    window.quickWallet=function(id){
-      const m=(window.memberRows||[]).find(function(x){return String(x.id)===String(id);}) || liveMembers.map(function(x){return Object.assign({id:x.id},x.raw||{});}).find(function(x){return String(x.id)===String(id);});
-      if(!m)return msg('العضو غير متوفر');
-      showWalletDialog(m);
-    };
-    const oldRender=window.render;
-    if(typeof oldRender==='function') window.render=function(){const r=oldRender.apply(this,arguments); setTimeout(updateReportNumbers,0); setTimeout(updateReportNumbers,250); return r;};
-    document.addEventListener('click',function(ev){const btn=ev.target&&ev.target.closest&&ev.target.closest('[data-member-action="wallet"]'); if(!btn)return; ev.preventDefault(); ev.stopPropagation(); window.quickWallet(btn.getAttribute('data-id'));},true);
-    startLiveReports(); setInterval(updateReportNumbers,900);
-  }.toString()+')();'; }
-  function patchAdmin(){
-    const fr=document.getElementById('linkoAdminFrame');
-    if(!fr||!fr.__linkoAdminLoaded||!fr.contentDocument||!fr.contentDocument.body)return;
-    try{const w=fr.contentWindow,doc=fr.contentDocument; if(!w.__linkoAdminWalletReportsFinalFix){const sc=doc.createElement('script'); sc.textContent=adminPatchCode(); doc.body.appendChild(sc);}}
-    catch(e){}
-  }
-  /* MEDINA V68: تقارير العضو تبقى، لكن حقن إدارة الأعضاء متوقف. */
+  // READ AUDIT: disabled legacy admin wallet/reports listener removed permanently.
 })();
 </script><script id="linkoFinalPreStage6WalletBranchSearchPatch">
 (function(){
@@ -9071,188 +8030,8 @@ if(form) form.reset();
     }
   }, true);
 
-  // 2) إصلاح إدارة الأعضاء: الرصيد لا يظهر undefined، ونافذة الرصيد تعرض الرقم الحالي وتخزن الرقم الجديد بشكل نظيف.
-  function adminPatchSource(){
-    return '(' + function(){
-      if(window.__linkoFinalWalletAndMembersDisplayRootFix) return;
-      window.__linkoFinalWalletAndMembersDisplayRootFix = true;
-
-      const FIREBASE_CONFIG = {
-        apiKey: "AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA",
-        authDomain: "medina-bazaar-e2c18.firebaseapp.com",
-        projectId: "medina-bazaar-e2c18",
-        storageBucket: "medina-bazaar-e2c18.firebasestorage.app",
-        messagingSenderId: "375693456199",
-        appId: "1:375693456199:web:2b36e0368ed898a7a11262"
-      };
-      const MEMBERS_COLLECTION = 'members';
-      let fbPromise = null;
-      let memberRows = [];
-      let unsub = null;
-
-      function clean(v){ return String(v == null ? '' : v).trim(); }
-      function num(v){
-        if(v == null || v === '') return 0;
-        const n = Number(String(v).replace(/[٠-٩]/g, function(d){ return '٠١٢٣٤٥٦٧٨٩'.indexOf(d); }).replace(/[^0-9.\-]/g,''));
-        return Number.isFinite(n) ? n : 0;
-      }
-      function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g, function(m){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]; }); }
-      function moneyText(v){
-        const n = num(v);
-        try{ if(typeof money === 'function') return money(n); }catch(e){}
-        return n.toLocaleString('ar-IQ') + ' د.ع';
-      }
-      function msg(v){ try{ if(typeof toast === 'function') toast(v); else console.log(v); }catch(e){} }
-      function statusText(s){ return (s === 'stopped' || s === 'inactive' || s === 'disabled') ? 'موقوف' : 'مفعل'; }
-      function statusCls(s){ try{ return typeof cls === 'function' ? cls(s) : ''; }catch(e){ return ''; } }
-      function initial(name){ return clean(name || 'ع').slice(0,1).toUpperCase() || 'ع'; }
-      async function fb(){
-        if(fbPromise) return fbPromise;
-        fbPromise = Promise.all([
-          import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),
-          import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')
-        ]).then(function(mods){
-          const appMod = mods[0], fs = mods[1];
-          const app = appMod.getApps().length ? appMod.getApps()[0] : appMod.initializeApp(FIREBASE_CONFIG);
-          return {db: fs.getFirestore(app), fs: fs};
-        });
-        return fbPromise;
-      }
-      function getBalance(d){
-        if(Object.prototype.hasOwnProperty.call(d,'balance')) return num(d.balance);
-        if(Object.prototype.hasOwnProperty.call(d,'wallet')) return num(d.wallet);
-        if(Object.prototype.hasOwnProperty.call(d,'credit')) return num(d.credit);
-        if(Object.prototype.hasOwnProperty.call(d,'amount')) return num(d.amount);
-        return 0;
-      }
-      function normalize(doc){
-        const d = doc.data() || {};
-        const status = clean(d.status || 'active') || 'active';
-        return {
-          id: doc.id,
-          firebaseId: doc.id,
-          name: d.name || d.fullName || d.username || '',
-          username: d.username || d.name || d.fullName || '',
-          phone: d.phone || d.mobile || '',
-          area: d.area || d.address || d.location || '',
-          address: d.address || d.area || d.location || '',
-          code: d.code || d.password || d.pin || '',
-          password: d.password || d.code || d.pin || '',
-          balance: getBalance(d),
-          status: status,
-          img: d.img || d.avatar || d.photo || '',
-          avatar: d.avatar || d.img || d.photo || '',
-          deleted: !!d.deleted || status === 'deleted' || status === 'removed'
-        };
-      }
-      function publish(renderNow){
-        try{
-          window.state = window.state || {};
-          window.state.members = memberRows.filter(function(m){ return !m.deleted; });
-        }catch(e){}
-        if(renderNow && window.active === 'members'){
-          try{ render(); }catch(e){}
-        }
-        try{ if(typeof buildNav === 'function') buildNav(); }catch(e){}
-      }
-      function start(){
-        if(unsub) return;
-        fb().then(function(f){
-          unsub = f.fs.onSnapshot(f.fs.collection(f.db, MEMBERS_COLLECTION), function(snap){
-            memberRows = [];
-            snap.forEach(function(doc){
-              const m = normalize(doc);
-              if(!m.deleted) memberRows.push(m);
-            });
-            publish(true);
-          }, function(err){ console.warn('members wallet listen failed', err); });
-        }).catch(function(e){ console.warn('members wallet firebase failed', e); });
-      }
-      function findMember(id){ return memberRows.find(function(m){ return String(m.id) === String(id) || String(m.firebaseId) === String(id); }); }
-      async function updateMember(id, payload){
-        const f = await fb();
-        await f.fs.updateDoc(f.fs.doc(f.db, MEMBERS_COLLECTION, String(id)), Object.assign({}, payload, {updatedAt:f.fs.serverTimestamp()}));
-      }
-
-      window.members = function(){
-        const q = (document.getElementById('memSearch') && document.getElementById('memSearch').value) || '';
-        const list = memberRows.filter(function(m){
-          return !m.deleted && (!q || [m.name,m.username,m.phone,m.area,m.address,m.code,m.password].join(' ').includes(q));
-        });
-        return '<div class="panel"><div class="panel-head"><div><h2>إدارة الأعضاء</h2><p>كل عضو ببطاقة مرتبة مع أزرار تعديل وحذف.</p></div></div>'+
-          '<div class="tools"><input class="input" id="memSearch" oninput="render()" value="'+esc(q)+'" placeholder="بحث بالاسم أو الهاتف أو الرمز"><select><option>كل الحالات</option></select><button class="btn secondary" onclick="render()">بحث</button></div>'+
-          '<div class="members-admin-grid">'+(list.length ? list.map(function(m){
-            return '<div class="admin-member-box"><div class="member-admin-head"><div class="member-admin-avatar">'+(m.img?'<img src="'+esc(m.img)+'" alt="'+esc(m.name)+'" loading="lazy" decoding="async">':initial(m.name))+'</div><div class="member-admin-info"><h3>'+esc(m.name||'-')+' <span class="status '+statusCls(m.status)+'">'+statusText(m.status)+'</span></h3><p>الهاتف: '+esc(m.phone||'-')+'<br>العنوان: '+esc(m.area||m.address||'-')+'</p></div></div>'+
-            '<div class="member-admin-meta"><div class="member-admin-pill"><small>اسم المستخدم</small>'+esc(m.username||m.name||'-')+'</div><div class="member-admin-pill"><small>كلمة السر</small>'+esc(m.password||m.code||'-')+'</div><div class="member-admin-pill"><small>الرمز</small>'+esc(m.code||'-')+'</div><div class="member-admin-pill"><small>الرصيد</small>'+moneyText(m.balance)+'</div></div>'+
-            '<div class="actions-row"><button class="btn secondary mini" data-member-action="edit" data-id="'+esc(m.id)+'">تعديل</button><button class="btn danger mini" data-member-action="delete" data-id="'+esc(m.id)+'">حذف العضو</button><button class="btn mini" data-member-action="wallet" data-id="'+esc(m.id)+'">إضافة رصيد</button><button class="btn warn mini" data-member-action="toggle" data-id="'+esc(m.id)+'">'+(m.status==='active'?'إيقاف':'تفعيل')+'</button></div></div>';
-          }).join('') : '<div class="empty">لا يوجد أعضاء</div>')+'</div></div>';
-      };
-
-      window.quickWallet = async function(id){
-        const m = findMember(id);
-        if(!m){ msg('العضو غير متوفر'); return; }
-        const current = num(m.balance);
-        const val = prompt('أدخل مبلغ الرصيد الحالي/الجديد', String(current));
-        if(val === null) return;
-        const newBalance = num(val);
-        if(!Number.isFinite(newBalance) || newBalance < 0){ msg('المبلغ غير صحيح'); return; }
-        try{
-          await updateMember(m.firebaseId || m.id, {balance:newBalance, wallet:newBalance, credit:newBalance});
-          m.balance = newBalance;
-          publish(true);
-          msg('تم تحديث الرصيد');
-        }catch(e){ console.error(e); msg('تعذر تحديث الرصيد'); }
-      };
-
-      window.toggleMember = async function(id){
-        const m = findMember(id); if(!m){ msg('العضو غير متوفر'); return; }
-        const ns = m.status === 'active' ? 'stopped' : 'active';
-        try{ await updateMember(m.firebaseId || m.id, {status:ns}); msg(ns==='active'?'تم تفعيل العضو':'تم إيقاف العضو'); }
-        catch(e){ console.error(e); msg('تعذر تحديث الحالة'); }
-      };
-      window.deleteMember = async function(id){
-        const m = findMember(id); if(!m){ msg('العضو غير متوفر'); return; }
-        if(!confirm('تأكيد حذف العضو؟')) return;
-        try{ await updateMember(m.firebaseId || m.id, {deleted:true,status:'deleted'}); msg('تم حذف العضو'); }
-        catch(e){ console.error(e); msg('تعذر حذف العضو'); }
-      };
-
-      document.addEventListener('click', function(e){
-        const btn = e.target.closest('[data-member-action]');
-        if(!btn) return;
-        const action = btn.getAttribute('data-member-action');
-        const id = btn.getAttribute('data-id');
-        if(action === 'wallet' || action === 'toggle' || action === 'delete'){
-          e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-          if(action === 'wallet') window.quickWallet(id);
-          if(action === 'toggle') window.toggleMember(id);
-          if(action === 'delete') window.deleteMember(id);
-        }
-      }, true);
-
-      window.linkoWalletMembersRefresh = function(){ start(); publish(true); };
-      start();
-    }.toString() + ')();';
-  }
-
-  function patchAdminFrame(){
-    const frame = document.getElementById('linkoAdminFrame');
-    if(!frame || !frame.__linkoAdminLoaded || !frame.contentDocument || !frame.contentWindow) return;
-    try{
-      const w = frame.contentWindow, doc = frame.contentDocument;
-      if(!doc.body) return;
-      if(!w.__linkoFinalWalletAndMembersDisplayRootFix){
-        const sc = doc.createElement('script');
-        sc.textContent = adminPatchSource();
-        doc.body.appendChild(sc);
-      }else if(typeof w.linkoWalletMembersRefresh === 'function'){
-        w.linkoWalletMembersRefresh();
-      }
-    }catch(e){ console.warn('admin wallet patch wait', e); }
-  }
-  /* MEDINA V68: بحث الفروع يبقى، وحقن إدارة الأعضاء متوقف. */
+  // READ AUDIT: disabled legacy admin members/wallet listener removed permanently.
 })();
-
 </script><!-- ===== LINKO STRICT FIX: ONLY WALLET CURRENT VALUE + HOME BRANCH SEARCH ===== --><script id="linkoStrictWalletCurrentAndBranchSearchOnly">
 (function(){
   if(window.__linkoStrictWalletCurrentAndBranchSearchOnly) return;
@@ -9314,96 +8093,7 @@ if(form) form.reset();
   }, true);
   setTimeout(renderBranchesSearchOnly,300);
 
-  /* 2) إصلاح رصيد إدارة الأعضاء داخل iframe فقط */
-  const FIREBASE_CONFIG={apiKey:"AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA",authDomain:"medina-bazaar-e2c18.firebaseapp.com",projectId:"medina-bazaar-e2c18",storageBucket:"medina-bazaar-e2c18.firebasestorage.app",messagingSenderId:"375693456199",appId:"1:375693456199:web:2b36e0368ed898a7a11262"};
-  function adminPatch(){return '('+function(){
-    if(window.__linkoWalletCurrentValueNoPromptPatch) return;
-    window.__linkoWalletCurrentValueNoPromptPatch = true;
-    const FIREBASE_CONFIG = __CFG__;
-    const MEMBERS_COLLECTION='members';
-    let fbPromise=null, rows=[], unsub=null;
-    function clean(v){return String(v==null?'':v).trim();}
-    function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];});}
-    function n(v){
-      if(typeof v === 'number' && Number.isFinite(v)) return v;
-      const s=String(v==null?'':v).replace(/[٠-٩]/g,function(d){return '٠١٢٣٤٥٦٧٨٩'.indexOf(d);}).replace(/[^0-9.-]/g,'');
-      const x=Number(s);
-      return Number.isFinite(x)?x:0;
-    }
-    function readBalance(d){ return n(d.balance ?? d.wallet ?? d.credit ?? d.amount ?? 0); }
-    function money(v){ try{return readBalance({balance:v}).toLocaleString('ar-IQ')+' د.ع';}catch(e){return String(v||0)+' د.ع';} }
-    function msg(t){ try{ if(typeof toast==='function') toast(t); else alert(t); }catch(e){alert(t);} }
-    async function fb(){
-      if(fbPromise) return fbPromise;
-      fbPromise=Promise.all([import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')]).then(function(m){
-        const appMod=m[0], fs=m[1];
-        const app=appMod.getApps().length?appMod.getApps()[0]:appMod.initializeApp(FIREBASE_CONFIG);
-        return {db:fs.getFirestore(app),fs:fs};
-      });
-      return fbPromise;
-    }
-    function norm(doc){
-      const d=doc.data()||{}; const status=clean(d.status||'active'); const bal=readBalance(d);
-      return {id:doc.id,firebaseId:doc.id,name:d.name||d.fullName||d.username||'',username:d.username||d.name||'',phone:d.phone||'',area:d.area||d.address||'',address:d.address||d.area||'',code:d.code||d.password||d.pin||'',password:d.password||d.code||d.pin||'',balance:bal,status:status,img:d.img||d.avatar||d.photo||'',deleted:!!d.deleted||status==='deleted'||status==='removed',raw:d};
-    }
-    function findMember(id){ return rows.find(function(m){return String(m.id)===String(id)||String(m.firebaseId)===String(id);}); }
-    function publish(){
-      try{ window.state=window.state||{}; window.state.members=rows.filter(function(m){return !m.deleted;}); }catch(e){}
-      try{ if(window.active==='members' && typeof render==='function') render(); }catch(e){}
-    }
-    function start(){
-      if(unsub) return;
-      fb().then(function(f){
-        unsub=f.fs.onSnapshot(f.fs.collection(f.db,MEMBERS_COLLECTION),function(snap){
-          rows=[]; snap.forEach(function(doc){ const m=norm(doc); if(!m.deleted) rows.push(m); });
-          publish();
-        },function(err){console.warn('wallet members listener failed',err);});
-      });
-    }
-    async function updateBalance(memberId, value){
-      const f=await fb();
-      await f.fs.updateDoc(f.fs.doc(f.db,MEMBERS_COLLECTION,String(memberId)),{balance:value,wallet:value,credit:value,updatedAt:f.fs.serverTimestamp()});
-    }
-    function closeWalletBox(){ const el=document.getElementById('linkoWalletBoxStrict'); if(el) el.remove(); }
-    function openWalletBox(m){
-      closeWalletBox();
-      const wrap=document.createElement('div');
-      wrap.id='linkoWalletBoxStrict';
-      wrap.style.cssText='position:fixed;inset:0;z-index:999999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:18px;direction:rtl;font-family:Cairo,system-ui,sans-serif;';
-      wrap.innerHTML='<div style="width:min(420px,95vw);background:#fff;color:#111827;border-radius:24px;padding:18px;box-shadow:0 30px 90px rgba(0,0,0,.35);text-align:right"><h3 style="margin:0 0 8px;font-size:20px;font-weight:900">تعديل رصيد العضو</h3><p style="margin:0 0 12px;color:#667085;font-weight:800">الرصيد الحالي ظاهر داخل الخانة. عدّل الرقم ثم اضغط حفظ.</p><input id="linkoWalletValueStrict" inputmode="numeric" type="text" style="width:100%;height:54px;border:1px solid #cbd5e1;border-radius:16px;padding:0 14px;font-size:18px;font-weight:900;direction:ltr;text-align:left" value="'+esc(String(readBalance(m)))+'"><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px"><button id="linkoWalletCancelStrict" style="height:50px;border:0;border-radius:16px;font-weight:900;background:#f1f5f9;color:#111827">إلغاء</button><button id="linkoWalletSaveStrict" style="height:50px;border:0;border-radius:16px;font-weight:900;background:#059669;color:white">حفظ الرصيد</button></div></div>';
-      document.body.appendChild(wrap);
-      const input=wrap.querySelector('#linkoWalletValueStrict');
-      setTimeout(function(){try{input.focus();input.select();}catch(e){}},80);
-      wrap.querySelector('#linkoWalletCancelStrict').onclick=closeWalletBox;
-      wrap.querySelector('#linkoWalletSaveStrict').onclick=async function(){
-        const value=n(input.value);
-        if(!Number.isFinite(value)||value<0){msg('المبلغ غير صحيح');return;}
-        try{ await updateBalance(m.firebaseId||m.id,value); m.balance=value; msg('تم تحديث الرصيد'); closeWalletBox(); publish(); }
-        catch(e){console.error(e); msg('تعذر تحديث الرصيد');}
-      };
-      wrap.addEventListener('click',function(e){ if(e.target===wrap) closeWalletBox(); });
-    }
-    window.quickWallet=function(id){ const m=findMember(id); if(!m){msg('العضو غير متوفر');return;} openWalletBox(m); };
-
-    document.addEventListener('click',function(e){
-      const btn=e.target && e.target.closest && e.target.closest('[data-member-action="wallet"]');
-      if(!btn) return;
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      window.quickWallet(btn.getAttribute('data-id'));
-    },true);
-    start();
-  }.toString().replace('__CFG__', JSON.stringify(FIREBASE_CONFIG)) + ')();';}
-  function patchAdmin(){
-    const fr=document.getElementById('linkoAdminFrame');
-    if(!fr || !fr.__linkoAdminLoaded || !fr.contentDocument || !fr.contentDocument.body) return;
-    try{
-      const w=fr.contentWindow, doc=fr.contentDocument;
-      if(!w.__linkoWalletCurrentValueNoPromptPatch){
-        const sc=doc.createElement('script'); sc.textContent=adminPatch(); doc.body.appendChild(sc);
-      }
-    }catch(e){console.warn('wallet patch wait',e);}
-  }
-  /* MEDINA V68: بحث الفروع يبقى، وحقن الرصيد القديم متوقف. */
+  // READ AUDIT: disabled legacy admin wallet listener removed permanently.
 })();
 </script><!-- ===== LINKO STRICT FIX ONLY: prevent duplicated members in admin list after approval ===== --><script>
 (function(){
@@ -9459,136 +8149,7 @@ if(form) form.reset();
       }).join(''):'<div class="empty">لا يوجد أعضاء</div>')+'</div></div>';
   };
 })();
-</script><!-- ===== LINKO FIX ONLY: Member Login Must Open The Exact Member ===== --><script id="linkoMemberLoginExactIdentityOnlyFinal">
-(function(){
-  if(window.__linkoMemberLoginExactIdentityOnlyFinal) return;
-  window.__linkoMemberLoginExactIdentityOnlyFinal = true;
-
-  const FIREBASE_CONFIG = {
-    apiKey: "AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA",
-    authDomain: "medina-bazaar-e2c18.firebaseapp.com",
-    projectId: "medina-bazaar-e2c18",
-    storageBucket: "medina-bazaar-e2c18.firebasestorage.app",
-    messagingSenderId: "375693456199",
-    appId: "1:375693456199:web:2b36e0368ed898a7a11262"
-  };
-  const MEMBERS_COLLECTION = 'members';
-  let fbPromise = null;
-
-  function clean(v){ return String(v == null ? '' : v).trim(); }
-  function toastSafe(msg){ try{ if(typeof toast === 'function') toast(msg); else alert(msg); }catch(e){} }
-  function isActiveMember(m){
-    const status = clean(m.status || 'active').toLowerCase();
-    return m.deleted !== true && !['deleted','removed','rejected','blocked','stopped','inactive'].includes(status);
-  }
-  function dateValue(v){
-    try{
-      if(!v) return 0;
-      if(v && typeof v.toMillis === 'function') return v.toMillis();
-      if(v && typeof v.toDate === 'function') return v.toDate().getTime();
-      if(v && typeof v.seconds === 'number') return v.seconds * 1000;
-      const t = Date.parse(v); return Number.isNaN(t) ? 0 : t;
-    }catch(e){ return 0; }
-  }
-  async function fb(){
-    if(fbPromise) return fbPromise;
-    fbPromise = Promise.all([
-      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),
-      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')
-    ]).then(function(m){
-      const appMod = m[0], fs = m[1];
-      const app = appMod.getApps().length ? appMod.getApps()[0] : appMod.initializeApp(FIREBASE_CONFIG);
-      return {db: fs.getFirestore(app), fs: fs};
-    });
-    return fbPromise;
-  }
-  function clearMemberSessionOnly(){
-    try{ localStorage.removeItem('linko_current_member'); localStorage.removeItem('lm_current_user'); }catch(e){}
-    try{ window.currentUser = null; }catch(e){}
-    try{ if(typeof currentUser !== 'undefined') currentUser = null; }catch(e){}
-  }
-  function setExactUser(u){
-    try{ window.currentUser = u; }catch(e){}
-    try{ if(typeof currentUser !== 'undefined') currentUser = u; }catch(e){}
-    try{ localStorage.setItem('linko_current_member', JSON.stringify(u)); localStorage.setItem('lm_current_user', JSON.stringify(u)); }catch(e){}
-  }
-  function normalizeMember(doc){
-    const m = doc.data() || {};
-    const name = m.name || m.username || m.fullName || '';
-    const code = m.code || m.password || m.pin || '';
-    return Object.assign({}, m, {
-      id: doc.id,
-      firebaseId: doc.id,
-      memberId: doc.id,
-      docId: doc.id,
-      name: name,
-      username: m.username || name,
-      fullName: m.fullName || name,
-      code: code,
-      password: m.password || code,
-      pin: m.pin || code,
-      phone: m.phone || '',
-      area: m.area || m.address || '',
-      address: m.address || m.area || '',
-      balance: Number(m.balance || 0),
-      ordersCount: Number(m.ordersCount || m.orderCount || 0),
-      orderCount: Number(m.ordersCount || m.orderCount || 0),
-      avatar: m.avatar || m.img || '',
-      img: m.img || m.avatar || ''
-    });
-  }
-  async function findExactMember(name, code){
-    const f = await fb();
-    const snap = await f.fs.getDocs(f.fs.collection(f.db, MEMBERS_COLLECTION));
-    const matches = [];
-    snap.forEach(function(doc){
-      const m = doc.data() || {};
-      if(!isActiveMember(m)) return;
-      const names = [m.name, m.username, m.fullName].map(clean);
-      const codes = [m.code, m.password, m.pin].map(clean);
-      if(names.includes(name) && codes.includes(code)) matches.push({doc: doc, data: m});
-    });
-    if(!matches.length) return null;
-    matches.sort(function(a,b){
-      const ta = Math.max(dateValue(a.data.updatedAt), dateValue(a.data.approvedAt), dateValue(a.data.createdAt));
-      const tb = Math.max(dateValue(b.data.updatedAt), dateValue(b.data.approvedAt), dateValue(b.data.createdAt));
-      return tb - ta;
-    });
-    return normalizeMember(matches[0].doc);
-  }
-
-  // المسار الوحيد لدخول العضو: Firebase فقط، بدون getSavedMembers وبدون بقايا العضو السابق.
-  window.login = async function(e){
-    if(e && e.preventDefault) e.preventDefault();
-    const name = clean((window.loginUsername && window.loginUsername.value) || (document.getElementById('loginUsername') && document.getElementById('loginUsername').value));
-    const code = clean((window.loginPassword && window.loginPassword.value) || (document.getElementById('loginPassword') && document.getElementById('loginPassword').value));
-    if(!name || !code){ toastSafe('أدخل الاسم والرمز'); return false; }
-    clearMemberSessionOnly();
-    try{
-      const member = await findExactMember(name, code);
-      if(!member){ toastSafe('الاسم أو الرمز غير صحيح'); return false; }
-      setExactUser(member);
-      try{ if(typeof fillUser === 'function') fillUser(); }catch(e){}
-      try{ if(typeof window.linkoRefreshMember === 'function') window.linkoRefreshMember(); }catch(e){}
-      try{ if(typeof go === 'function') go('homePage'); }catch(e){}
-      toastSafe('تم تسجيل الدخول بنجاح');
-      return false;
-    }catch(err){
-      console.error('LINKO exact member login failed', err);
-      toastSafe('تعذر التحقق من العضوية، تأكد من الإنترنت');
-      return false;
-    }
-  };
-
-  const oldLogout = window.logout;
-  if(typeof oldLogout === 'function'){
-    window.logout = function(){
-      clearMemberSessionOnly();
-      return oldLogout.apply(this, arguments);
-    };
-  }
-})();
-</script><!-- ===== LINKO PHASE 5 CLOSEOUT: ONLY DUPLICATE MEMBER + CURRENT BALANCE ===== --><!-- ===== LINKO PHASE 5: WALLET CURRENT VALUE FIELD ONLY ===== --><script id="linkoPhase5WalletCurrentFieldOnlyFinal">
+</script><!-- ===== LINKO FIX ONLY: Member Login Must Open The Exact Member ===== --><!-- READ_AUDIT_REMOVED_OBSOLETE:linkoMemberLoginExactIdentityOnlyFinal --><!-- ===== LINKO PHASE 5 CLOSEOUT: ONLY DUPLICATE MEMBER + CURRENT BALANCE ===== --><!-- ===== LINKO PHASE 5: WALLET CURRENT VALUE FIELD ONLY ===== --><script id="linkoPhase5WalletCurrentFieldOnlyFinal">
 (function(){
   if (window.__linkoPhase5WalletCurrentFieldOnlyFinal) return;
   window.__linkoPhase5WalletCurrentFieldOnlyFinal = true;
@@ -9813,21 +8374,19 @@ if(form) form.reset();
   }
   function subscribeAggregate(firebaseRef,name,onNext,onError){
     let channel=channels.get(name);
-    if(!channel){channel={subs:new Set(),last:null,unsub:null,starting:false,controls:{}};channels.set(name,channel);}
+    if(!channel){channel={subs:new Set(),last:null,unsub:null,controls:{},migrating:false};channels.set(name,channel);}
     const sub={next:onNext,error:typeof onError==='function'?onError:null};channel.subs.add(sub);
     if(channel.last){Promise.resolve().then(function(){if(channel.subs.has(sub))try{sub.next(channel.last)}catch(e){}});}
-    if(!channel.unsub && !channel.starting){
-      channel.starting=true;
-      ensureAggregate(firebaseRef,name).then(function(info){
-        if(!info)return;
-        const fs=firebaseRef.fs;
-        channel.unsub=fs.onSnapshot(info.ref,function(docSnap){
-          const next=(docSnap.exists()?(docSnap.data()||{}):{}).controls||{};
-          const synthetic=makeSynthetic(name,next,channel.controls);
-          channel.controls=Object.assign({},next);channel.last=synthetic;
-          channel.subs.forEach(function(item){try{item.next(synthetic)}catch(e){console.warn('LINKO aggregate subscriber failed',name,e)}});
-        },function(error){channel.subs.forEach(function(item){try{if(item.error)item.error(error)}catch(e){}});});
-      }).catch(function(error){channel.subs.forEach(function(item){try{if(item.error)item.error(error)}catch(e){}});}).finally(function(){channel.starting=false;});
+    if(!channel.unsub){
+      const fs=firebaseRef.fs,ref=fs.doc(firebaseRef.db,name,AGGREGATES[name]);
+      channel.unsub=fs.onSnapshot(ref,function(docSnap){
+        // RADICAL READ GUARANTEE: public/member browsing never falls back to a full legacy collection scan.
+        // If an aggregate is ever missing, render the static catalog defaults and let an explicit admin write/migration repair it.
+        const next=(docSnap.exists()?(docSnap.data()||{}):{}).controls||{};
+        const synthetic=makeSynthetic(name,next,channel.controls);
+        channel.controls=Object.assign({},next);channel.last=synthetic;
+        channel.subs.forEach(function(item){try{item.next(synthetic)}catch(e){console.warn('LINKO aggregate subscriber failed',name,e)}});
+      },function(error){channel.subs.forEach(function(item){try{if(item.error)item.error(error)}catch(e){}});});
     }
     return function(){channel.subs.delete(sub);if(channel.subs.size===0&&channel.unsub){try{channel.unsub()}catch(e){}channel.unsub=null;channel.last=null;channel.controls={};}};
   }
@@ -9861,62 +8420,31 @@ if(form) form.reset();
 (function(){
   'use strict';
   if(window.__linkoScopedRealtimeHub) return;
-  const singleChannels=new Map(), multiChannels=new Map();
+  const channels=new Map();
   function safe(v){return String(v==null?'':v).trim();}
   function identity(u){u=u||{};return {id:safe(u.firebaseId||u.memberId||u.docId||u.id),name:safe(u.name||u.username||u.fullName),branch:safe(u.branchId||u.branch||u.branchName)};}
   function sig(doc){try{return JSON.stringify(doc.data()||{},function(k,v){if(v&&typeof v.toMillis==='function')return v.toMillis();if(v&&typeof v.seconds==='number'&&typeof v.nanoseconds==='number')return [v.seconds,v.nanoseconds];return v;});}catch(e){return '';}}
   function synthetic(map,previous){const docs=Array.from(map.values()),changes=[];map.forEach(function(doc,id){if(!previous.has(id))changes.push({type:'added',doc:doc});else if(sig(previous.get(id))!==sig(doc))changes.push({type:'modified',doc:doc});});previous.forEach(function(doc,id){if(!map.has(id))changes.push({type:'removed',doc:doc});});return {docs:docs,size:docs.length,empty:docs.length===0,forEach:function(fn){docs.forEach(fn);},docChanges:function(){return changes.slice();}};}
-  function subscribeQuery(f,key,queryRef,onNext,onError){if(!f||!f.fs||!queryRef||typeof onNext!=='function')return function(){};let ch=singleChannels.get(key);if(!ch){ch={subs:new Set(),last:null,unsub:null};singleChannels.set(key,ch);}const sub={next:onNext,error:typeof onError==='function'?onError:null};ch.subs.add(sub);if(!ch.unsub){ch.unsub=f.fs.onSnapshot(queryRef,function(snap){ch.last=snap;ch.subs.forEach(function(x){try{x.next(snap);}catch(e){console.warn('LINKO scoped subscriber failed',key,e);}});},function(err){ch.subs.forEach(function(x){try{if(x.error)x.error(err);}catch(e){}});});}else if(ch.last){Promise.resolve().then(function(){if(ch.subs.has(sub)){try{sub.next(ch.last);}catch(e){}}});}return function(){ch.subs.delete(sub);if(ch.subs.size===0&&ch.unsub){try{ch.unsub();}catch(e){}singleChannels.delete(key);}};}
-  function subscribeMulti(f,key,refs,onNext,onError){if(!f||!f.fs||!Array.isArray(refs)||!refs.length||typeof onNext!=='function')return function(){};let ch=multiChannels.get(key);if(!ch){ch={subs:new Set(),sources:refs.map(function(ref){return {ref:ref,ready:false,map:new Map(),unsub:null};}),lastMap:new Map(),started:false};multiChannels.set(key,ch);}const sub={next:onNext,error:typeof onError==='function'?onError:null};ch.subs.add(sub);function emit(){if(ch.sources.some(function(x){return !x.ready;}))return;const merged=new Map();ch.sources.forEach(function(x){x.map.forEach(function(doc,id){merged.set(id,doc);});});const snap=synthetic(merged,ch.lastMap);ch.lastMap=new Map(merged);ch.subs.forEach(function(x){try{x.next(snap);}catch(e){console.warn('LINKO scoped multi subscriber failed',key,e);}});}if(!ch.started){ch.started=true;ch.sources.forEach(function(source){source.unsub=f.fs.onSnapshot(source.ref,function(snap){source.map=new Map();snap.forEach(function(doc){source.map.set(doc.id,doc);});source.ready=true;emit();},function(err){source.ready=true;source.map=new Map();ch.subs.forEach(function(x){try{if(x.error)x.error(err);}catch(e){}});emit();});});}else if(ch.sources.every(function(x){return x.ready;})){Promise.resolve().then(function(){if(ch.subs.has(sub)){try{sub.next(synthetic(ch.lastMap,new Map(ch.lastMap)));}catch(e){}}});}return function(){ch.subs.delete(sub);if(ch.subs.size===0){ch.sources.forEach(function(x){try{if(x.unsub)x.unsub();}catch(e){}});multiChannels.delete(key);}};}
-  function subscribeMemberRequests(f,u,onNext,onError){
-    const who=identity(u),fs=f.fs,col=fs.collection(f.db,'memberChangeRequests'),refs=[];
-    // READ OPTIMIZATION PHASE 2: authenticated members have a stable document id, so do not
-    // open the legacy name query in parallel. Keep the name path only as a fallback for old sessions.
-    if(who.id) refs.push(fs.query(col,fs.where('memberId','==',who.id),fs.limit(3)));
-    else if(who.name) refs.push(fs.query(col,fs.where('memberName','==',who.name),fs.limit(3)));
-    if(!refs.length)return function(){};
-    return subscribeMulti(f,'memberRequests:v2:'+who.id+':'+who.name,refs,onNext,onError);
+  function subscribeMulti(f,key,refs,onNext,onError){
+    if(!f||!f.fs||!Array.isArray(refs)||!refs.length||typeof onNext!=='function')return function(){};
+    let ch=channels.get(key);
+    if(!ch){ch={subs:new Set(),sources:refs.map(function(ref){return {ref:ref,ready:false,map:new Map(),unsub:null};}),lastMap:new Map(),started:false};channels.set(key,ch);}
+    const sub={next:onNext,error:typeof onError==='function'?onError:null};ch.subs.add(sub);
+    function emit(){if(ch.sources.some(function(x){return !x.ready;}))return;const merged=new Map();ch.sources.forEach(function(x){x.map.forEach(function(doc,id){merged.set(id,doc);});});const snap=synthetic(merged,ch.lastMap);ch.lastMap=new Map(merged);ch.subs.forEach(function(x){try{x.next(snap);}catch(e){console.warn('LINKO scoped notification subscriber failed',key,e);}});}
+    if(!ch.started){ch.started=true;ch.sources.forEach(function(source){source.unsub=f.fs.onSnapshot(source.ref,function(snap){source.map=new Map();snap.forEach(function(doc){source.map.set(doc.id,doc);});source.ready=true;emit();},function(err){source.ready=true;source.map=new Map();ch.subs.forEach(function(x){try{if(x.error)x.error(err);}catch(e){}});emit();});});}
+    else if(ch.sources.every(function(x){return x.ready;})){Promise.resolve().then(function(){if(ch.subs.has(sub)){try{sub.next(synthetic(ch.lastMap,new Map(ch.lastMap)));}catch(e){}}});}
+    return function(){ch.subs.delete(sub);if(ch.subs.size===0){ch.sources.forEach(function(x){try{if(x.unsub)x.unsub();}catch(e){}});channels.delete(key);}};
   }
   function subscribeMemberNotifications(f,u,onNext,onError){
     const who=identity(u),fs=f.fs,col=fs.collection(f.db,'memberNotifications'),refs=[];
-    // Current writers always target the member id. Keep a tiny memberId fallback for older courier/admin rows.
-    if(who.id){
-      refs.push(fs.query(col,fs.where('targetValue','==',who.id),fs.limit(1)));
-    }else if(who.name){
-      refs.push(fs.query(col,fs.where('memberName','==',who.name),fs.limit(1)));
-    }
-    // RADICAL READ MODE: latest global notice only. Older history can be loaded later on demand.
+    if(who.id) refs.push(fs.query(col,fs.where('targetValue','==',who.id),fs.limit(1)));
+    else if(who.name) refs.push(fs.query(col,fs.where('memberName','==',who.name),fs.limit(1)));
     refs.push(fs.query(col,fs.where('targetType','==','all_members'),fs.limit(1)));
-    return subscribeMulti(f,'memberNotifications:v2:'+who.id+':'+who.name+':'+who.branch,refs,onNext,onError);
+    return subscribeMulti(f,'memberNotifications:v3:'+who.id+':'+who.name+':'+who.branch,refs,onNext,onError);
   }
-  window.__linkoScopedRealtimeHub={subscribeMemberRequests:subscribeMemberRequests,subscribeMemberNotifications:subscribeMemberNotifications};
+  window.__linkoScopedRealtimeHub={subscribeMemberNotifications:subscribeMemberNotifications};
 })();
-</script><!-- ===== LINKO FIRESTORE READ OPTIMIZATION: MEMBER/ORDER SHARED HUB ===== --><script id="linkoFirestoreReadOptimizationHub">
-(function(){
-  'use strict';
-  if(window.__linkoReadHub)return;
-  const memberChannels=new Map(),orderChannels=new Map();
-  function clean(v){return String(v==null?'':v).trim();}
-  function subscribeDoc(f,map,key,ref,onNext,onError){
-    let ch=map.get(key);if(!ch){ch={subs:new Set(),last:null,unsub:null};map.set(key,ch);}
-    const sub={next:onNext,error:typeof onError==='function'?onError:null};ch.subs.add(sub);
-    if(!ch.unsub){ch.unsub=f.fs.onSnapshot(ref,function(snap){ch.last=snap;ch.subs.forEach(function(x){try{x.next(snap)}catch(e){}});},function(err){ch.subs.forEach(function(x){try{if(x.error)x.error(err)}catch(e){}});});}
-    else if(ch.last){Promise.resolve().then(function(){if(ch.subs.has(sub))try{sub.next(ch.last)}catch(e){}});}
-    return function(){ch.subs.delete(sub);if(ch.subs.size===0&&ch.unsub){try{ch.unsub()}catch(e){}map.delete(key);}};
-  }
-  function subscribeMember(f,id,onNext,onError){id=clean(id);if(!id)return function(){};return subscribeDoc(f,memberChannels,id,f.fs.doc(f.db,'members',id),onNext,onError);}
-  function subscribeMemberOrders(f,id,onNext,onError){
-    id=clean(id);if(!id)return function(){};
-    let ch=orderChannels.get(id);if(!ch){ch={subs:new Set(),last:null,unsub:null};orderChannels.set(id,ch);}
-    const sub={next:onNext,error:typeof onError==='function'?onError:null};ch.subs.add(sub);
-    if(!ch.unsub){const q=f.fs.query(f.fs.collection(f.db,'orders'),f.fs.where('memberId','==',id));ch.unsub=f.fs.onSnapshot(q,function(snap){ch.last=snap;ch.subs.forEach(function(x){try{x.next(snap)}catch(e){}});},function(err){ch.subs.forEach(function(x){try{if(x.error)x.error(err)}catch(e){}});});}
-    else if(ch.last){Promise.resolve().then(function(){if(ch.subs.has(sub))try{sub.next(ch.last)}catch(e){}});}
-    return function(){ch.subs.delete(sub);if(ch.subs.size===0&&ch.unsub){try{ch.unsub()}catch(e){}orderChannels.delete(id);}};
-  }
-  function stats(){return {memberDocs:memberChannels.size,memberOrders:orderChannels.size};}
-  window.__linkoReadHub={subscribeMember:subscribeMember,subscribeMemberOrders:subscribeMemberOrders,stats:stats};
-})();
-</script><!-- ===== LINKO STAGE 6.2: SMOOTH PRODUCT STATUS + NAME EDIT ONLY ===== --><script id="linkoStage62ProductSmoothNameOnly">
+</script><!-- ===== LINKO FIRESTORE READ OPTIMIZATION: MEMBER/ORDER SHARED HUB ===== --><!-- READ_AUDIT_REMOVED_OBSOLETE:linkoFirestoreReadOptimizationHub --><!-- ===== LINKO STAGE 6.2: SMOOTH PRODUCT STATUS + NAME EDIT ONLY ===== --><script id="linkoStage62ProductSmoothNameOnly">
 (function(){
   'use strict';
   if(window.__linkoStage62ProductSmoothNameOnly) return;
@@ -10363,87 +8891,7 @@ if(form) form.reset();
     });
     return firebasePromise;
   }
-  async function findMemberRef(f, user){
-    user = user || getCurrentUser();
-    if(!user) return null;
-    const id = clean(user.firebaseId || user.memberId || user.docId || user.id);
-    if(id){
-      const direct = f.fs.doc(f.db, MEMBERS_COLLECTION, id);
-      try{
-        const directSnap = await f.fs.getDoc(direct);
-        if(directSnap.exists()) return direct;
-      }catch(e){}
-    }
-    const name = clean(user.name || user.username || user.fullName);
-    const code = clean(user.code || user.password || user.pin);
-    if(!name || !code) return null;
-    const queryRef = f.fs.query(
-      f.fs.collection(f.db, MEMBERS_COLLECTION),
-      f.fs.where('name','==',name),
-      f.fs.limit(20)
-    );
-    const snap = await f.fs.getDocs(queryRef);
-    let found = null;
-    snap.forEach(function(docSnap){
-      const data = docSnap.data() || {};
-      if(!found && clean(data.code || data.password || data.pin) === code) found = docSnap.ref;
-    });
-    return found;
-  }
-  function toastSafe(message){
-    try{ if(typeof toast === 'function') toast(message); else alert(message); }
-    catch(e){ try{ alert(message); }catch(_){} }
-  }
-  function cartSnapshot(){
-    try{ if(typeof cart !== 'undefined' && Array.isArray(cart)) return JSON.parse(JSON.stringify(cart)); }catch(e){}
-    try{
-      const parsed = JSON.parse(localStorage.getItem('lm_cart') || '[]');
-      return Array.isArray(parsed) ? parsed : [];
-    }catch(e){ return []; }
-  }
-  function branchLabel(item){
-    if(clean(item && item.branchName)) return clean(item.branchName);
-    if(clean(item && item.branch) && !/^[a-z0-9_-]+$/i.test(clean(item.branch))) return clean(item.branch);
-    try{
-      const branchId = item.branchId || item.branch || '';
-      if(typeof branches !== 'undefined' && Array.isArray(branches)){
-        const row = branches.find(function(branch){ return String(branch.id) === String(branchId); });
-        if(row && row.name) return clean(row.name);
-      }
-    }catch(e){}
-    return clean(item && item.branch) || 'غير محدد';
-  }
-  function orderItems(sourceCart){
-    return sourceCart.map(function(item, index){
-      return {
-        index: index + 1,
-        id: clean(item.id),
-        name: clean(item.name) || 'منتج',
-        branchId: clean(item.branchId),
-        branch: branchLabel(item),
-        quantity: Math.max(1, Number(item.qty || item.quantity || 1) || 1),
-        details: clean(item.details),
-        note: clean(item.note),
-        restaurant: clean(item.restaurant),
-        isSpecial: !!item.isSpecial
-      };
-    });
-  }
-  function contactData(user){
-    user = user || {};
-    const byId = function(id){ const el = document.getElementById(id); return el ? clean(el.value) : ''; };
-    return {
-      name: clean(user.name || user.fullName || user.username) || byId('orderCustomerName'),
-      username: clean(user.username || user.name || user.fullName),
-      phone: byId('orderCustomerPhone') || clean(user.phone),
-      address: byId('orderAddress') || clean(user.address || user.area)
-    };
-  }
-  function deliveryTextNow(){
-    try{ if(typeof getDeliveryStatusText === 'function') return clean(getDeliveryStatusText()); }catch(e){}
-    try{ if(typeof deliveryText === 'function') return clean(deliveryText()); }catch(e){}
-    return 'غير محدد';
-  }
+  // READ AUDIT: obsolete member lookup removed; order history uses the stored member id.
   function orderNumber(){
     const now = new Date();
     return 'ORD-' + now.getFullYear() + pad(now.getMonth()+1) + pad(now.getDate()) + '-'
@@ -10569,31 +9017,27 @@ if(form) form.reset();
     memberOrdersUnsubscribe = null;
     const user = getCurrentUser();
     if(!user){ memberOrdersRows = []; renderMemberOrders(); return; }
+    const memberId = clean(user.firebaseId || user.memberId || user.docId || user.id);
+    if(!memberId){ memberOrdersRows = []; renderMemberOrders(); return; }
     try{
       const f = await firebase();
-      const memberRef = await findMemberRef(f, user);
-      if(!memberRef) return;
-      const memberSnap = await f.fs.getDoc(memberRef);
-      if(memberSnap.exists()){
-        const memberData = memberSnap.data() || {};
-        const merged = Object.assign({}, user, memberData, {firebaseId:memberRef.id, memberId:memberRef.id});
-        setCurrentUser(merged);
-        setOrderCountUI(Number(memberData.ordersCount || memberData.orderCount || 0));
-      }
       const queryRef = f.fs.query(
         f.fs.collection(f.db, ORDERS_COLLECTION),
-        f.fs.where('memberId','==',memberRef.id),
-        f.fs.limit(10)
+        f.fs.where('memberId','==',memberId),
+        f.fs.orderBy(f.fs.documentId(),'desc'),
+        f.fs.limit(6)
       );
-      memberOrdersUnsubscribe = window.__linkoReadHub.subscribeMemberOrders(f,memberRef.id,function(snapshot){
-        const map = new Map();
-        snapshot.forEach(function(docSnap){
-          map.set(docSnap.id, Object.assign({id:docSnap.id}, docSnap.data() || {}));
-        });
-        memberOrdersRows = Array.from(map.values());
+      memberOrdersUnsubscribe = f.fs.onSnapshot(queryRef,function(snapshot){
+        memberOrdersRows = snapshot.docs.map(function(docSnap){
+          return Object.assign({id:docSnap.id}, docSnap.data() || {});
+        }).sort(function(a,b){ return Number(b.clientCreatedAtMs||0)-Number(a.clientCreatedAtMs||0); });
         renderMemberOrders();
       }, function(error){ console.warn('LINKO member orders listener failed', error); });
     }catch(error){ console.warn('LINKO member orders start failed', error); }
+  }
+  function stopMemberOrdersListener(){
+    try{ if(memberOrdersUnsubscribe) memberOrdersUnsubscribe(); }catch(e){}
+    memberOrdersUnsubscribe = null;
   }
   function clearCartAfterSuccess(){
     try{ if(typeof cart !== 'undefined') cart = []; }catch(e){}
@@ -10614,108 +9058,7 @@ if(form) form.reset();
     modal.classList.add('show');
   }
 
-  // المسار الوحيد المعتمد لإرسال الطلب: حفظ واحد، عداد واحد، واتساب واحد.
-  window.__linkoLegacySendOrder9 = async function(){
-    if(sendingOrder) return;
-    const sourceCart = cartSnapshot();
-    if(!sourceCart.length){ toastSafe('السلة فارغة'); return; }
-    try{ if(typeof ensureContactFields === 'function') ensureContactFields(); }catch(e){}
-    const user = getCurrentUser();
-    if(!user){ toastSafe('سجل الدخول أولاً'); return; }
-    const contact = contactData(user);
-    if(!contact.address){
-      toastSafe('اكتب العنوان التفصيلي قبل إرسال الطلب');
-      try{ document.getElementById('orderAddress')?.focus(); }catch(e){}
-      return;
-    }
-
-    sendingOrder = true;
-    const number = orderNumber();
-    const items = orderItems(sourceCart);
-    const note = clean(document.getElementById('orderNote') && document.getElementById('orderNote').value);
-    const delivery = deliveryTextNow();
-    const createdAtText = new Date().toLocaleString('ar-IQ');
-    const clientCreatedAtMs = Date.now();
-    let whatsappWindow = null;
-    try{ whatsappWindow = window.open('about:blank','_blank'); }catch(e){}
-
-    try{
-      const f = await firebase();
-      const memberRef = await findMemberRef(f, user);
-      if(!memberRef) throw new Error('member-not-found');
-      const orderRef = f.fs.doc(f.db, ORDERS_COLLECTION, number);
-      const branchesList = Array.from(new Set(items.map(function(item){ return item.branch; }).filter(Boolean)));
-      const payload = {
-        orderNumber: number,
-        memberId: memberRef.id,
-        memberName: contact.name,
-        memberUsername: contact.username,
-        memberPhone: contact.phone,
-        memberAddress: contact.address,
-        branch: branchesList.join('، ') || 'غير محدد',
-        branches: branchesList,
-        products: items,
-        items: items,
-        specialRequests: items.filter(function(item){ return item.isSpecial; }),
-        note: note,
-        delivery: delivery,
-        itemCount: items.length,
-        totalQuantity: items.reduce(function(total,item){ return total + Number(item.quantity || 1); },0),
-        date: createdAtText,
-        createdAtText: createdAtText,
-        clientCreatedAtMs: clientCreatedAtMs,
-        createdAt: f.fs.serverTimestamp(),
-        source: 'member_order'
-      };
-      const actualMemberName = clean(user.name || user.fullName || user.username) || contact.name || 'عضو سوق المدينة';
-      payload.memberName = actualMemberName;
-      payload.memberUsername = clean(user.username || user.name || user.fullName) || contact.username || actualMemberName;
-      payload.memberPhone = clean(user.phone || user.mobile) || contact.phone;
-      payload.memberAddress = clean(user.address || user.area) || contact.address;
-      const newCount = Number(user.ordersCount || user.orderCount || 0) + 1;
-      const batch=f.fs.writeBatch(f.db);
-      batch.set(orderRef,payload);
-      batch.update(memberRef,{
-        ordersCount:f.fs.increment(1),
-        orderCount:f.fs.increment(1),
-        updatedAt:f.fs.serverTimestamp()
-      });
-      await batch.commit();
-
-      const mergedUser = Object.assign({}, user, {
-        firebaseId: memberRef.id,
-        memberId: memberRef.id,
-        ordersCount: newCount,
-        orderCount: newCount
-      });
-      setCurrentUser(mergedUser);
-      contact.name = actualMemberName;
-      setOrderCountUI(newCount);
-      memberOrdersRows = [Object.assign({id:number}, payload)].concat(memberOrdersRows.filter(function(row){
-        return clean(row.orderNumber || row.id) !== number;
-      }));
-      renderMemberOrders();
-
-      const message = whatsappMessage(contact, items, note, delivery, number);
-      const url = 'https://wa.me/' + whatsappNumber() + '?text=' + encodeURIComponent(message);
-      if(whatsappWindow && !whatsappWindow.closed){
-        try{ whatsappWindow.location.href = url; }catch(e){ window.open(url,'_blank'); }
-      }else{
-        window.open(url,'_blank');
-      }
-
-      clearCartAfterSuccess();
-      showOrderSuccess();
-    }catch(error){
-      console.error('LINKO final order save failed', error);
-      try{ if(whatsappWindow && !whatsappWindow.closed) whatsappWindow.close(); }catch(e){}
-      toastSafe(error && error.message === 'member-not-found'
-        ? 'تعذر تحديد حساب العضو. أعد تسجيل الدخول وحاول مرة ثانية.'
-        : 'تعذر تسجيل الطلب. السلة بقيت كما هي، حاول مرة ثانية.');
-    }finally{
-      sendingOrder = false;
-    }
-  };
+  // READ AUDIT: obsolete order-send implementation removed. The authoritative path is linkoRootOrderFixV22.
 
   const previousRenderOrders = window.renderOrders;
   window.renderOrders = function(){
@@ -10732,6 +9075,8 @@ if(form) form.reset();
       if(id === 'ordersPage'){
         renderMemberOrders();
         startMemberOrdersListener();
+      }else{
+        stopMemberOrdersListener();
       }
       return result;
     };
@@ -10907,21 +9252,13 @@ if(form) form.reset();
     setTimeout(patchAdminFrame,1000);
     setTimeout(patchAdminFrame,2500);
   });
-  document.addEventListener('DOMContentLoaded',function(){
-    setTimeout(startMemberOrdersListener,500);
-    patchAdminFrame();
-  });
-  window.addEventListener('load',function(){
-    setTimeout(startMemberOrdersListener,700);
-    patchAdminFrame();
-  });
-  setTimeout(startMemberOrdersListener,700);
+  document.addEventListener('DOMContentLoaded',function(){ patchAdminFrame(); });
+  window.addEventListener('load',function(){ patchAdminFrame(); });
   setTimeout(patchAdminFrame,250);
   setTimeout(patchAdminFrame,1000);
   setTimeout(patchAdminFrame,2500);
   setTimeout(patchAdminFrame,5000);
 })();
-
 </script><!-- ===== LINKO STAGE 7.4: COMPLETE NOTIFICATIONS ONLY ===== -->
 <!-- ===== LINKO STAGE 7.5: REPORTS ONLY ===== --><script id="linkoStage75ReportsOnly">
 (function(){
@@ -11728,118 +10065,9 @@ body:not(.linko-dark) .info-box{
   'use strict';
   if(window.__linkoPhase93A4BProductionSecurityBridge) return;
   window.__linkoPhase93A4BProductionSecurityBridge = true;
-
   const CFG={apiKey:'AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA',authDomain:'medina-bazaar-e2c18.firebaseapp.com',projectId:'medina-bazaar-e2c18',storageBucket:'medina-bazaar-e2c18.firebasestorage.app',messagingSenderId:'375693456199',appId:'1:375693456199:web:2b36e0368ed898a7a11262'};
-  const COL={members:'members',keys:'memberLoginKeys',orders:'orders',changes:'memberChangeRequests',notifications:'memberNotifications'};
-  let fbPromise=null,memberUnsub=null,ordersUnsub=null,notificationUnsubs=[],notificationSources=new Map(),notificationRows=[],notificationsLoaded=false,popupQueue=[],popupBusy=false,popupTimer=0,popupFinish=0,loginBusy=false;
-
-  function clean(v){return String(v==null?'':v).trim()}
-  function normName(v){let s=clean(v);try{s=s.normalize('NFKC')}catch(e){}return s.replace(/\s+/g,' ').toLowerCase()}
-  function esc(v){return clean(v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
-  function safeToast(v){try{if(typeof window.toast==='function')window.toast(v);else if(typeof toast==='function')toast(v)}catch(e){}}
-  function fallbackHash(text){const input=unescape(encodeURIComponent(String(text))),parts=[];for(let r=0;r<8;r++){let h=(2166136261^(r*2654435761))>>>0;for(let i=0;i<input.length;i++){h^=input.charCodeAt(i);h=Math.imul(h,16777619)>>>0}parts.push(h.toString(16).padStart(8,'0'))}return parts.join('')}
-  async function sha256(text){try{if(window.crypto&&crypto.subtle&&window.TextEncoder){const b=new TextEncoder().encode(String(text)),d=await crypto.subtle.digest('SHA-256',b);return Array.from(new Uint8Array(d),x=>x.toString(16).padStart(2,'0')).join('')}}catch(e){}return fallbackHash(text)}
-  async function parts(name,code){const key=await sha256('LINKO_MEMBER_LOGIN_V2|'+normName(name)+'|'+clean(code)),pass=await sha256('LINKO_MEMBER_PASSWORD_V2|'+key);return {key:key,email:'u.'+key.slice(0,48)+'@members.medina-bazaar-e2c18.web.app',password:pass+'Aa1!'}}
-  async function firebase(){if(fbPromise)return fbPromise;fbPromise=Promise.all([import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js'),import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')]).then(function(m){const appMod=m[0],authMod=m[1],fs=m[2],app=appMod.getApps().length?appMod.getApps()[0]:appMod.initializeApp(CFG);return {auth:authMod.getAuth(app),authMod:authMod,db:fs.getFirestore(app),fs:fs}});return fbPromise}
-  function activeMember(d){d=d||{};const s=clean(d.status).toLowerCase();return !d.deleted&&!['deleted','removed','stopped','inactive','blocked','موقوف','محذوف'].includes(s)}
-  function memberId(u){u=u||{};return clean(u.firebaseId||u.memberId||u.docId||u.id)}
-  function currentMember(){try{if(window.currentUser)return window.currentUser}catch(e){}for(const k of ['linko_current_member','lm_current_user']){try{const x=JSON.parse(localStorage.getItem(k)||'null');if(x)return x}catch(e){}}return null}
-  function saveMember(u){if(!u)return;try{window.currentUser=u;localStorage.setItem('linko_current_member',JSON.stringify(u));localStorage.setItem('lm_current_user',JSON.stringify(u))}catch(e){}}
-  function normalizedMember(id,d,code,uid){d=d||{};return Object.assign({},d,{id:id,firebaseId:id,memberId:id,name:d.name||d.fullName||d.username||'',username:d.username||d.name||d.fullName||'',code:d.code||d.password||d.pin||code,password:d.password||d.code||d.pin||code,phone:d.phone||d.mobile||'',area:d.area||d.address||'',address:d.address||d.area||'',balance:Number(d.balance||0),ordersCount:Number(d.ordersCount||d.orderCount||0),orderCount:Number(d.ordersCount||d.orderCount||0),authUid:uid,authIdentityVersion:2})}
-  function clearListeners(){try{if(memberUnsub)memberUnsub()}catch(e){}try{if(ordersUnsub)ordersUnsub()}catch(e){}notificationUnsubs.forEach(function(u){try{u()}catch(e){}});memberUnsub=null;ordersUnsub=null;notificationUnsubs=[];notificationSources.clear();notificationRows=[];notificationsLoaded=false;popupQueue=[];popupBusy=false;clearTimeout(popupTimer);clearTimeout(popupFinish)}
-  function setCountUI(n){const v=String(Math.max(0,Number(n)||0));['memberOrdersCount','ordersCount','profileOrdersCount'].forEach(function(id){const el=document.getElementById(id);if(el)el.textContent=v});try{document.querySelectorAll('.member-stat,.info-box').forEach(function(box){const l=box.querySelector('small'),b=box.querySelector('b');if(l&&b&&clean(l.textContent).includes('طلبات'))b.textContent=v})}catch(e){}}
-
-  async function legacyPrepareKey(f,name,code,p){try{const wanted=clean(name),col=f.fs.collection(f.db,COL.members),rows=[],seen=new Set();for(const field of ['name','username','fullName']){if(rows.length)break;const q=f.fs.query(col,f.fs.where(field,'==',wanted),f.fs.limit(5)),snap=await f.fs.getDocs(q);snap.forEach(function(doc){if(seen.has(doc.id))return;seen.add(doc.id);const d=doc.data()||{},codes=[d.code,d.password,d.pin].map(clean);if(activeMember(d)&&codes.includes(clean(code)))rows.push({id:doc.id,data:d})});}if(!rows.length)return null;rows.sort(function(a,b){function tm(x){const v=x.data.updatedAt||x.data.approvedAt||x.data.createdAt;try{if(v&&v.toMillis)return v.toMillis();if(v&&v.seconds)return v.seconds*1000;return Date.parse(v)||0}catch(e){return 0}}return tm(b)-tm(a)});const row=rows[0],keyRef=f.fs.doc(f.db,COL.keys,p.key),memRef=f.fs.doc(f.db,COL.members,row.id);await Promise.all([f.fs.setDoc(keyRef,{memberId:row.id,authEmail:p.email,active:true,version:2,preparedAt:f.fs.serverTimestamp(),updatedAt:f.fs.serverTimestamp()},{merge:true}),f.fs.setDoc(memRef,{authLoginKey:p.key,authEmail:p.email,authIdentityTargetVersion:2,authPreparedAt:f.fs.serverTimestamp()},{merge:true})]);return {id:row.id,data:row.data}}catch(e){console.warn('LINKO targeted legacy member lookup skipped',e);return null}}
-  async function signInOrCreate(f,p){try{return await f.authMod.signInWithEmailAndPassword(f.auth,p.email,p.password)}catch(err){const c=clean(err&&err.code);if(!['auth/invalid-credential','auth/user-not-found','auth/wrong-password','auth/invalid-login-credentials'].includes(c))throw err;try{return await f.authMod.createUserWithEmailAndPassword(f.auth,p.email,p.password)}catch(createErr){if(clean(createErr&&createErr.code)==='auth/email-already-in-use')return f.authMod.signInWithEmailAndPassword(f.auth,p.email,p.password);throw createErr}}}
-  async function claimMember(f,p,uid){const keyRef=f.fs.doc(f.db,COL.keys,p.key);return f.fs.runTransaction(f.db,async function(tx){const keySnap=await tx.get(keyRef);if(!keySnap.exists())throw new Error('LOGIN_KEY_MISSING');const kd=keySnap.data()||{};if(kd.active===false||clean(kd.authEmail)!==p.email)throw new Error('LOGIN_KEY_INVALID');const id=clean(kd.memberId);if(!id)throw new Error('MEMBER_ID_MISSING');const memRef=f.fs.doc(f.db,COL.members,id),memSnap=await tx.get(memRef);if(!memSnap.exists())throw new Error('MEMBER_MISSING');const md=memSnap.data()||{};if(!activeMember(md))throw new Error('MEMBER_INACTIVE');const oldKeyUid=clean(kd.uid);if(oldKeyUid&&oldKeyUid!==uid)throw new Error('LOGIN_KEY_CLAIMED');const now=f.fs.serverTimestamp();tx.set(keyRef,{uid:uid,claimedAt:kd.claimedAt||now,updatedAt:now},{merge:true});tx.set(memRef,{authUid:uid,authLoginKey:p.key,authEmail:p.email,authIdentityVersion:2,authLinkedAt:md.authLinkedAt||now,authUpdatedAt:now},{merge:true});return {id:id,data:md}})}
-  async function batchMerge(f,items){for(let i=0;i<items.length;i+=350){const b=f.fs.writeBatch(f.db);items.slice(i,i+350).forEach(x=>b.set(x.ref,x.data,{merge:true}));await b.commit()}}
-  async function linkOwnedData(f,id,uid){const updates=new Map(),jobs=[f.fs.getDocs(f.fs.query(f.fs.collection(f.db,COL.orders),f.fs.where('memberId','==',id))),f.fs.getDocs(f.fs.query(f.fs.collection(f.db,COL.changes),f.fs.where('memberId','==',id))),f.fs.getDocs(f.fs.query(f.fs.collection(f.db,COL.notifications),f.fs.where('targetValue','==',id))),f.fs.getDocs(f.fs.query(f.fs.collection(f.db,COL.notifications),f.fs.where('memberId','==',id)))];const r=await Promise.all(jobs);r[0].forEach(d=>updates.set(d.ref.path,{ref:d.ref,data:{memberAuthUid:uid,identityVersion:2,identityUpdatedAt:f.fs.serverTimestamp()}}));r[1].forEach(d=>updates.set(d.ref.path,{ref:d.ref,data:{memberAuthUid:uid,identityVersion:2,identityUpdatedAt:f.fs.serverTimestamp()}}));for(let i=2;i<r.length;i++)r[i].forEach(d=>updates.set(d.ref.path,{ref:d.ref,data:{targetAuthUid:uid,identityVersion:2,identityUpdatedAt:f.fs.serverTimestamp()}}));if(updates.size)await batchMerge(f,Array.from(updates.values()));await f.fs.setDoc(f.fs.doc(f.db,COL.members,id),{dataIdentityVersion:2,dataIdentityUpdatedAt:f.fs.serverTimestamp()},{merge:true})}
-
-  function readKey(id){return 'linko_stage74_read_'+memberId(currentMember())+'_'+id}
-  function shownKey(id){return 'linko_stage74_shown_'+memberId(currentMember())+'_'+id}
-  function notificationMeta(r){if(r.targetType==='branch'&&r.branchName)return 'الفرع: '+r.branchName;if(r.targetType==='all_branches')return 'إعلان لجميع الفروع';if(r.targetType==='all_members')return 'إشعار لجميع الأعضاء';return ''}
-  function renderNotifications(){const list=document.getElementById('notesList');if(!list)return;const rows=notificationRows.slice(0,5);list.innerHTML=rows.length?rows.map(function(r){const unread=!localStorage.getItem(readKey(r.id)),meta=notificationMeta(r);return '<div class="note-card"><div class="note-top"><div><h3>'+esc(r.title||'إشعار')+'</h3><p>'+esc(r.text||'')+'</p>'+(meta?'<small style="display:block;margin-top:5px;font-weight:800">'+esc(meta)+'</small>':'')+'<small>'+esc(r.date||'')+'</small></div><span class="status '+(unread?'pending':'info')+'">'+(unread?'غير مقروء':'مقروء')+'</span></div></div>'}).join(''):'<div class="empty-card">لا توجد إشعارات حالياً</div>';const page=document.getElementById('notificationsPage'),open=page&&page.classList.contains('active');if(open)rows.forEach(r=>localStorage.setItem(readKey(r.id),'1'));const badge=document.getElementById('notifBadge'),count=rows.filter(r=>!localStorage.getItem(readKey(r.id))).length;if(badge){badge.textContent=String(count);badge.style.display=count?'grid':'none'}}
-  function ensurePopup(){let p=document.getElementById('linkoStage74MemberNotificationPopup');if(p)return p;p=document.createElement('div');p.id='linkoStage74MemberNotificationPopup';p.hidden=true;p.setAttribute('role','status');p.setAttribute('aria-live','polite');document.body.appendChild(p);return p}
-  function nextPopup(){if(popupBusy||!popupQueue.length)return;popupBusy=true;const r=popupQueue.shift(),p=ensurePopup(),meta=notificationMeta(r);clearTimeout(popupTimer);clearTimeout(popupFinish);p.hidden=false;p.setAttribute('aria-hidden','false');p.style.removeProperty('visibility');p.style.removeProperty('opacity');p.innerHTML='<h3>'+esc(r.title||'إشعار من الإدارة')+'</h3><p>'+esc(r.text||'')+'</p>'+(meta?'<small>'+esc(meta)+'</small>':'');requestAnimationFrame(()=>p.classList.add('show'));popupTimer=setTimeout(function(){p.classList.remove('show');p.setAttribute('aria-hidden','true');p.style.setProperty('visibility','hidden','important');p.style.setProperty('opacity','0','important');popupFinish=setTimeout(function(){p.hidden=true;p.innerHTML='';p.style.removeProperty('visibility');p.style.removeProperty('opacity');popupBusy=false;nextPopup()},240)},4000)}
-  function mergeNotifications(){const map=new Map();notificationSources.forEach(function(rows){rows.forEach(r=>map.set(r.id,r))});notificationRows=Array.from(map.values()).sort((a,b)=>b.sort-a.sort).slice(0,5);renderNotifications()}
-  async function startNotifications(f,id,uid){
-    notificationUnsubs.forEach(function(unsub){ try{ unsub(); }catch(e){} });
-    notificationUnsubs=[];
-    notificationSources.clear();
-    notificationRows=[];
-    notificationsLoaded=false;
-    const user=currentMember()||{};
-    const name=clean(user.name||user.username||user.fullName);
-    const code=clean(user.code||user.password||user.pin);
-    function belongsToMember(data){
-      data=data||{};
-      const type=clean(data.targetType||data.type);
-      const target=clean(data.targetValue||data.target);
-      if(['all_members','branch','all_branches','announcement'].includes(type)||target==='all') return true;
-      if(uid&&clean(data.targetAuthUid)===uid) return true;
-      if(id&&(target===id||clean(data.memberId)===id)) return true;
-      const targetName=clean(data.targetMemberName||data.memberName);
-      const targetCode=clean(data.targetMemberCode||data.memberCode);
-      if(name&&targetName===name&&(!targetCode||targetCode===code)) return true;
-      return false;
-    }
-    const unsub=window.__linkoScopedRealtimeHub.subscribeMemberNotifications(
-      f,currentMember()||{},
-      function(snapshot){
-        const rows=[];
-        snapshot.forEach(function(doc){
-          const data=doc.data()||{};
-          if(!belongsToMember(data)) return;
-          rows.push({
-            id:doc.id,
-            title:data.title||'إشعار من الإدارة',
-            text:data.text||data.message||'',
-            targetType:clean(data.targetType||data.type),
-            branchName:clean(data.branchName),
-            date:(data.createdAt&&data.createdAt.toDate?data.createdAt.toDate().toLocaleString('ar-IQ'):clean(data.date||data.time)),
-            sort:Number((data.createdAt&&data.createdAt.seconds?data.createdAt.seconds*1000:0)||data.clientCreatedAtMs||0)
-          });
-        });
-        rows.sort(function(a,b){ return Number(b.sort||0)-Number(a.sort||0); });
-        notificationRows=rows.slice(0,5);
-        notificationsLoaded=true;
-        renderNotifications();
-        snapshot.docChanges().forEach(function(change){
-          if(change.type!=='added'||localStorage.getItem(shownKey(change.doc.id))) return;
-          const row=notificationRows.find(function(item){ return item.id===change.doc.id; });
-          if(row){
-            localStorage.setItem(shownKey(row.id),'1');
-            popupQueue.push(row);
-            nextPopup();
-          }
-        });
-      },
-      function(error){
-        notificationsLoaded=true;
-        console.warn('LINKO member notification listener skipped',error);
-        renderNotifications();
-      }
-    );
-    notificationUnsubs.push(unsub);
-  }
-  async function startMemberRuntime(f,id,uid){
-    clearListeners();
-    // RADICAL READ MODE: zero background member/order/notification reads after login.
-    const current=currentMember()||{};
-    setCountUI(Number(current.ordersCount||current.orderCount||0));
-  }
-  async function selfVerify(f,p,id,uid){const [k,m]=await Promise.all([f.fs.getDoc(f.fs.doc(f.db,COL.keys,p.key)),f.fs.getDoc(f.fs.doc(f.db,COL.members,id))]);const ok=k.exists()&&m.exists()&&clean((k.data()||{}).uid)===uid&&clean((m.data()||{}).authUid)===uid&&clean((m.data()||{}).authLoginKey)===p.key;try{localStorage.setItem('linko_security_member_verified_v2',ok?'1':'0')}catch(e){}return ok}
-
-  window.login=async function(e){if(e&&e.preventDefault)e.preventDefault();if(loginBusy)return false;const name=clean(document.getElementById('loginUsername')&&document.getElementById('loginUsername').value),code=clean(document.getElementById('loginPassword')&&document.getElementById('loginPassword').value);if(!name||!code){safeToast('أدخل الاسم والرمز');return false}loginBusy=true;const btn=document.querySelector('#loginForm button[type="submit"]'),old=btn?btn.innerHTML:'';if(btn){btn.disabled=true;btn.innerHTML='<span class="mi">sync</span> جاري التحقق...'}try{const f=await firebase(),p=await parts(name,code);try{if(f.auth.currentUser)await f.authMod.signOut(f.auth)}catch(e){}let keySnap=await f.fs.getDoc(f.fs.doc(f.db,COL.keys,p.key));if(!keySnap.exists()){const legacy=await legacyPrepareKey(f,name,code,p);if(!legacy)throw new Error('INVALID_LOGIN');keySnap=await f.fs.getDoc(f.fs.doc(f.db,COL.keys,p.key))}const kd=keySnap.data()||{};if(kd.active===false||clean(kd.authEmail)!==p.email)throw new Error('INVALID_LOGIN');const cred=await signInOrCreate(f,p),uid=clean(cred&&cred.user&&cred.user.uid);if(!uid)throw new Error('AUTH_UID_MISSING');let claimed;if(clean(kd.uid)===uid&&clean(kd.memberId)){const ms=await f.fs.getDoc(f.fs.doc(f.db,COL.members,clean(kd.memberId)));if(!ms.exists()||!activeMember(ms.data()||{}))throw new Error('MEMBER_INACTIVE');claimed={id:ms.id,data:ms.data()||{}};}else{claimed=await claimMember(f,p,uid);}const u=normalizedMember(claimed.id,claimed.data||{},code,uid);saveMember(u);try{if(typeof fillUser==='function')fillUser()}catch(e){}try{if(typeof go==='function')go('homePage')}catch(e){}await startMemberRuntime(f,claimed.id,uid);try{localStorage.setItem('linko_security_member_verified_v2','1')}catch(e){}safeToast('تم تسجيل الدخول بنجاح');return false}catch(err){console.error('LINKO production member login failed',err);try{const f=await firebase();if(f.auth.currentUser)await f.authMod.signOut(f.auth)}catch(e){}safeToast(err&&err.message==='MEMBER_INACTIVE'?'الحساب موقوف':'الاسم أو الرمز غير صحيح');return false}finally{loginBusy=false;if(btn){btn.disabled=false;btn.innerHTML=old}}};
-  const logoutBeforeSecurity=window.logout;window.logout=function(){clearListeners();Promise.resolve().then(async function(){try{const f=await firebase();if(f.auth.currentUser)await f.authMod.signOut(f.auth)}catch(e){}});return typeof logoutBeforeSecurity==='function'?logoutBeforeSecurity.apply(this,arguments):undefined};
-  const goBeforeSecurity=window.go;if(typeof goBeforeSecurity==='function')window.go=function(id){const r=goBeforeSecurity.apply(this,arguments);if(id==='notificationsPage'&&notificationsLoaded)setTimeout(renderNotifications,40);return r};
-  window.renderNotes=renderNotifications;
-  // LINKO: expose only the original working notification listener so the exact-member login can restart it.
-  window.__linkoResumeMemberNotifications = async function(memberDocumentId, memberAuthUid){
-    const f = await firebase();
-    return startNotifications(f, clean(memberDocumentId), clean(memberAuthUid));
-  };
-
+  // READ AUDIT: obsolete member login/runtime from this older security bridge removed.
+  // The current keyed login path is linkoFinalExactMemberIdentityNoTouch later in the file.
   function adminSource(){
     return '('+function(){
       'use strict';
@@ -11866,7 +10094,6 @@ body:not(.linko-dark) .info-box{
   function retryAdmin(n){if(patchAdmin())return;if(n<30)setTimeout(()=>retryAdmin(n+1),250)}
   const frame=document.getElementById('linkoAdminFrame');if(frame)frame.addEventListener('load',()=>retryAdmin(0));document.addEventListener('DOMContentLoaded',()=>retryAdmin(0));window.addEventListener('load',()=>retryAdmin(0));retryAdmin(0);
 })();
-
 </script><!-- ===== LINKO URGENT FIX: MEMBER NOTIFICATION SCREEN POPUP ONLY ===== --><style id="linkoUrgentMemberNotificationPopupStyle">
 #linkoUrgentMemberNotificationPopup{
   position:fixed!important;z-index:2147483000!important;
@@ -11892,95 +10119,7 @@ body.linko-dark #linkoUrgentMemberNotificationPopup{background:linear-gradient(1
 body.linko-dark #linkoUrgentMemberNotificationPopup h3{color:#86efac!important}
 body.linko-dark #linkoUrgentMemberNotificationPopup p{color:#f8fafc!important}
 body.linko-dark #linkoUrgentMemberNotificationPopup small{color:#fde68a!important}
-</style><script id="linkoUrgentMemberNotificationPopupOnly">
-(function(){
-  'use strict';
-  if(window.__linkoUrgentMemberNotificationPopupOnly) return;
-  window.__linkoUrgentMemberNotificationPopupOnly=true;
-
-  const CFG={apiKey:'AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA',authDomain:'medina-bazaar-e2c18.firebaseapp.com',projectId:'medina-bazaar-e2c18',storageBucket:'medina-bazaar-e2c18.firebasestorage.app',messagingSenderId:'375693456199',appId:'1:375693456199:web:2b36e0368ed898a7a11262'};
-  let fbPromise=null,unsub=null,hideTimer=null,finishTimer=null,queue=[],busy=false;
-
-  function clean(v){return String(v==null?'':v).trim();}
-  function esc(v){return String(v==null?'':v).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];});}
-  function current(){
-    try{if(window.currentUser)return window.currentUser;}catch(e){}
-    try{if(typeof currentUser!=='undefined'&&currentUser)return currentUser;}catch(e){}
-    try{return JSON.parse(localStorage.getItem('linko_current_member')||localStorage.getItem('lm_current_user')||'null');}catch(e){return null;}
-  }
-  function identity(u){u=u||{};return {id:clean(u.firebaseId||u.memberId||u.docId||u.id),uid:clean(u.authUid||u.uid),name:clean(u.name||u.fullName||u.username),code:clean(u.code||u.password||u.pin),branch:clean(u.branchId||u.branch||u.branchName)};}
-  function matches(d,u){
-    d=d||{};u=identity(u);
-    const type=clean(d.targetType||d.type).toLowerCase();
-    const target=clean(d.targetValue||d.target||d.targetId);
-    if(type==='all_members'||type==='all'||type==='announcement'||target==='all')return true;
-    if(type==='branch'||type==='all_branches'){
-      if(type==='all_branches')return true;
-      const b=clean(d.branchId||d.targetBranchId||d.branchName||target);
-      return !b||b===u.branch;
-    }
-    if(u.uid&&clean(d.targetAuthUid||d.authUid)===u.uid)return true;
-    if(u.id&&(target===u.id||clean(d.memberId||d.targetMemberId)===u.id))return true;
-    const n=clean(d.targetMemberName||d.memberName||d.targetName);
-    const c=clean(d.targetMemberCode||d.memberCode);
-    return !!(u.name&&n===u.name&&(!c||c===u.code));
-  }
-  function popup(){
-    let p=document.getElementById('linkoUrgentMemberNotificationPopup');
-    if(p)return p;
-    p=document.createElement('div');p.id='linkoUrgentMemberNotificationPopup';p.setAttribute('role','status');p.setAttribute('aria-live','assertive');document.body.appendChild(p);return p;
-  }
-  function showNext(){
-    if(busy||!queue.length)return;
-    busy=true;
-    const row=queue.shift(),p=popup();
-    clearTimeout(hideTimer);clearTimeout(finishTimer);
-    p.innerHTML='<h3>'+esc(row.title||'إشعار من الإدارة')+'</h3><p>'+esc(row.text||'')+'</p>'+(row.meta?'<small>'+esc(row.meta)+'</small>':'');
-    requestAnimationFrame(function(){p.classList.add('show');});
-    hideTimer=setTimeout(function(){
-      p.classList.remove('show');
-      finishTimer=setTimeout(function(){p.innerHTML='';busy=false;showNext();},260);
-    },4000);
-  }
-  function enqueue(d,id){
-    const key='linko_urgent_popup_'+identity(current()).id+'_'+id;
-    try{if(localStorage.getItem(key))return;localStorage.setItem(key,'1');}catch(e){}
-    const type=clean(d.targetType||d.type);
-    const meta=type==='all_members'?'إشعار لجميع الأعضاء':(type==='branch'&&clean(d.branchName)?'الفرع: '+clean(d.branchName):'');
-    queue.push({title:d.title||'إشعار من الإدارة',text:d.text||d.message||'',meta:meta});
-    showNext();
-  }
-  function firebase(){
-    if(fbPromise)return fbPromise;
-    fbPromise=Promise.all([import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')]).then(function(m){
-      const app=m[0].getApps().length?m[0].getApps()[0]:m[0].initializeApp(CFG);
-      return {db:m[1].getFirestore(app),fs:m[1]};
-    });
-    return fbPromise;
-  }
-  async function start(){
-    const user=current();if(!user)return;
-    try{if(unsub){unsub();unsub=null;}}catch(e){}
-    try{
-      const f=await firebase();let initial=true;
-      unsub=window.__linkoScopedRealtimeHub.subscribeMemberNotifications(f,user,function(snap){
-        if(initial){initial=false;return;}
-        snap.docChanges().forEach(function(ch){
-          if(ch.type!=='added')return;
-          const d=ch.doc.data()||{};
-          if(matches(d,current()))enqueue(d,ch.doc.id);
-        });
-      },function(e){console.warn('LINKO urgent popup listener skipped',e);});
-    }catch(e){console.warn('LINKO urgent popup start skipped',e);}
-  }
-
-  const previousLogout=window.logout;
-  if(typeof previousLogout==='function'){
-    window.logout=function(){try{if(unsub){unsub();unsub=null;}}catch(e){}return previousLogout.apply(this,arguments);};
-  }
-  // RADICAL READ MODE: removed the second always-on notification listener.
-})();
-</script>
+</style><!-- READ_AUDIT_REMOVED_OBSOLETE:linkoUrgentMemberNotificationPopupOnly -->
 <!-- ===== LINKO FINAL TWO ROOT FIXES: NOTIFICATIONS + EXACT MEMBER ORDER COUNT ONLY ===== -->
 <style id="linkoFinalTwoRootFixesStyle">
 #linkoFinalNotificationPopup{position:fixed;top:16px;left:14px;right:14px;z-index:100000;background:#111827;color:#fff;border-radius:20px;padding:14px 16px;box-shadow:0 24px 70px rgba(0,0,0,.28);transform:translateY(-130%);opacity:0;transition:transform .24s ease,opacity .24s ease;pointer-events:none;text-align:right}
@@ -12007,13 +10146,11 @@ body.linko-dark #linkoUrgentMemberNotificationPopup small{color:#fde68a!importan
 
   let firebasePromise = null;
   let notificationUnsub = null;
-  let orderUnsub = null;
   let notifications = [];
   let notificationBaselineReady = false;
   let renderingNotifications = false;
   let settingOrderCount = false;
   let popupTimer = null;
-  let restartTimer = null;
 
   function clean(value){
     return String(value == null ? '' : value).trim();
@@ -12365,137 +10502,23 @@ body.linko-dark #linkoUrgentMemberNotificationPopup small{color:#fde68a!importan
     saveMemberOrderCount(Number(value));
   }
 
-  function orderBelongs(data, member){
-    const id = memberId(member);
-    const uid = memberUid(member);
-    const name = memberName(member);
-    const code = memberCode(member);
-    const phone = memberPhone(member);
-
-    if(id && [
-      data.memberId,
-      data.firebaseId,
-      data.memberDocumentId,
-      data.ownerId
-    ].some(function(value){ return clean(value) === id; })) return true;
-
-    if(uid && [
-      data.memberAuthUid,
-      data.authUid,
-      data.ownerUid
-    ].some(function(value){ return clean(value) === uid; })) return true;
-
-    const orderName = clean(
-      data.memberName ||
-      data.memberUsername ||
-      data.customerName ||
-      data.name
-    );
-
-    const orderCode = clean(data.memberCode || data.customerCode);
-    const orderPhone = clean(
-      data.phone ||
-      data.memberPhone ||
-      data.customerPhone
-    ).replace(/\D/g,'');
-
-    if(name && orderName === name && (!orderCode || orderCode === code)) return true;
-    return !!(phone && orderPhone && phone === orderPhone && (!orderName || orderName === name));
-  }
-
-  async function startOrders(){
-    const member = currentMember();
-    if(!member) return;
-
-    try{
-      if(orderUnsub) orderUnsub();
-    }catch(e){}
-
-    try{
-      const f = await firebase();
-      const id = memberId(member);
-
-      const source = id ?
-        f.fs.query(
-          f.fs.collection(f.db,'orders'),
-          f.fs.where('memberId','==',id)
-        ) :
-        f.fs.collection(f.db,'orders');
-
-      const subscribeExactOrders = id && window.__linkoReadHub
-        ? function(next,error){ return window.__linkoReadHub.subscribeMemberOrders(f,id,next,error); }
-        : function(next,error){ return f.fs.onSnapshot(source,next,error); };
-      orderUnsub = subscribeExactOrders(
-        function(snapshot){
-          if(id){
-            setOrderCountUI(snapshot.size);
-            return;
-          }
-
-          const ids = new Set();
-          snapshot.forEach(function(doc){
-            if(orderBelongs(doc.data() || {},member)) ids.add(doc.id);
-          });
-          setOrderCountUI(ids.size);
-        },
-        async function(error){
-          console.warn('LINKO exact order listener failed',error);
-
-          try{
-            const all = await f.fs.getDocs(f.fs.collection(f.db,'orders'));
-            const ids = new Set();
-
-            all.forEach(function(doc){
-              if(orderBelongs(doc.data() || {},member)) ids.add(doc.id);
-            });
-
-            setOrderCountUI(ids.size);
-          }catch(e){}
-        }
-      );
-    }catch(error){
-      console.warn('LINKO order counter startup failed',error);
-    }
-  }
-
-  function restart(){
-    clearTimeout(restartTimer);
-    restartTimer = setTimeout(function(){
-      startNotifications();
-      startOrders();
-    },200);
-  }
-
   window.renderNotes = renderNotifications;
 
   const previousGo = window.go;
   if(typeof previousGo === 'function'){
     window.go = function(pageId){
       const result = previousGo.apply(this,arguments);
-
       setTimeout(function(){
         if(pageId === 'notificationsPage'){
+          startNotifications();
           renderNotifications();
-          setTimeout(function(){
-            markNotificationsRead();
-            renderNotifications();
-          },120);
-        }
-
-        if(pageId === 'homePage' || pageId === 'profilePage'){
-          setNotificationBadge(unreadCount());
+          setTimeout(function(){ markNotificationsRead(); renderNotifications(); },120);
+        }else{
+          try{ if(notificationUnsub) notificationUnsub(); }catch(e){}
+          notificationUnsub = null;
+          if(pageId === 'homePage' || pageId === 'profilePage') setNotificationBadge(unreadCount());
         }
       },60);
-
-      return result;
-    };
-  }
-
-  const previousLogin = window.login;
-  if(typeof previousLogin === 'function'){
-    window.login = async function(){
-      const result = await previousLogin.apply(this,arguments);
-      restart();
       return result;
     };
   }
@@ -12505,11 +10528,9 @@ body.linko-dark #linkoUrgentMemberNotificationPopup small{color:#fde68a!importan
     window.logout = function(){
       try{
         if(notificationUnsub) notificationUnsub();
-        if(orderUnsub) orderUnsub();
       }catch(e){}
 
       notificationUnsub = null;
-      orderUnsub = null;
       notifications = [];
       setNotificationBadge(0);
 
@@ -12546,25 +10567,14 @@ body.linko-dark #linkoUrgentMemberNotificationPopup small{color:#fde68a!importan
     }).observe(element,{childList:true,characterData:true,subtree:true});
   });
 
-  document.addEventListener('visibilitychange',function(){
-    if(document.visibilityState === 'visible') restart();
-  });
-
-  window.addEventListener('online',restart);
-
-  setTimeout(restart,500);
 })();
 </script>
 
-<script id="linkoCartMemberPhoneExactFix">
+<script id="linkoCartMemberPhoneLocalOnly">
 (function(){
   'use strict';
-  if(window.__linkoCartMemberPhoneExactFix) return;
-  window.__linkoCartMemberPhoneExactFix=true;
-
-  const CFG={apiKey:'AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA',authDomain:'medina-bazaar-e2c18.firebaseapp.com',projectId:'medina-bazaar-e2c18',storageBucket:'medina-bazaar-e2c18.firebasestorage.app',messagingSenderId:'375693456199',appId:'1:375693456199:web:2b36e0368ed898a7a11262'};
-  let loading=null;
-
+  if(window.__linkoCartMemberPhoneLocalOnly) return;
+  window.__linkoCartMemberPhoneLocalOnly=true;
   function clean(v){return String(v==null?'':v).trim()}
   function currentMember(){
     try{if(window.currentUser)return window.currentUser}catch(e){}
@@ -12573,69 +10583,17 @@ body.linko-dark #linkoUrgentMemberNotificationPopup small{color:#fde68a!importan
     }
     return null;
   }
-  function memberId(u){u=u||{};return clean(u.firebaseId||u.memberId||u.docId||u.id)}
-  function saveMember(u){
-    if(!u)return;
-    try{
-      window.currentUser=u;
-      localStorage.setItem('linko_current_member',JSON.stringify(u));
-      localStorage.setItem('lm_current_user',JSON.stringify(u));
-    }catch(e){}
-  }
-  function phoneOf(d){return clean(d.phone||d.mobile||d.phoneNumber||d.whatsapp||d.contactPhone)}
-  function nameOf(d){return clean(d.name||d.fullName||d.username)}
-  function addressOf(d){return clean(d.address||d.area||d.location)}
   function fillFields(u){
     if(!u)return;
     const name=document.getElementById('orderCustomerName');
     const phone=document.getElementById('orderCustomerPhone');
     const address=document.getElementById('orderAddress');
-    const n=nameOf(u),p=phoneOf(u),a=addressOf(u);
+    const n=clean(u.name||u.fullName||u.username),p=clean(u.phone||u.mobile),a=clean(u.address||u.area);
     if(name&&n)name.value=n;
-    if(phone)phone.value=p;
+    if(phone&&p)phone.value=p;
     if(address&&!clean(address.value)&&a)address.value=a;
   }
-  async function loadExactMember(){
-    const local=currentMember();
-    fillFields(local);
-    const id=memberId(local);
-    if(!id)return local;
-    if(loading)return loading;
-    loading=(async function(){
-      try{
-        const [appMod,fs]=await Promise.all([
-          import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),
-          import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')
-        ]);
-        const app=appMod.getApps().length?appMod.getApps()[0]:appMod.initializeApp(CFG);
-        const db=fs.getFirestore(app);
-        const snap=await fs.getDoc(fs.doc(db,'members',id));
-        if(!snap.exists())return local;
-        const data=snap.data()||{};
-        const fresh=Object.assign({},local||{},data,{
-          id:id,firebaseId:id,memberId:id,
-          name:nameOf(data)||nameOf(local),
-          phone:phoneOf(data),
-          mobile:phoneOf(data),
-          address:addressOf(data)||addressOf(local),
-          area:addressOf(data)||addressOf(local)
-        });
-        saveMember(fresh);
-        fillFields(fresh);
-        return fresh;
-      }catch(error){
-        console.warn('LINKO cart member phone refresh skipped',error);
-        return local;
-      }finally{
-        setTimeout(function(){loading=null},500);
-      }
-    })();
-    return loading;
-  }
-  function refreshCartContact(){
-    setTimeout(function(){fillFields(currentMember());loadExactMember()},30);
-  }
-
+  function refreshCartContact(){setTimeout(function(){fillFields(currentMember())},30)}
   const oldGo=window.go;
   window.go=function(id){
     const result=typeof oldGo==='function'?oldGo.apply(this,arguments):undefined;
@@ -12648,8 +10606,6 @@ body.linko-dark #linkoUrgentMemberNotificationPopup small{color:#fde68a!importan
     refreshCartContact();
     return result;
   };
-  document.addEventListener('DOMContentLoaded',refreshCartContact,{once:true});
-  window.addEventListener('load',refreshCartContact,{once:true});
 })();
 </script>
 
@@ -16810,156 +14766,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
 
 })();
 
-</script><!-- ===== LINKO STAGE 7.7: ORDER COUNT + WHATSAPP SMOOTH ROOT FIX ONLY ===== --><script id="linkoStage77OrderCountWhatsappSmoothOnlyFix">
-(function(){
-  'use strict';
-  if(window.__linkoStage77OrderCountWhatsappSmoothOnlyFix) return;
-  window.__linkoStage77OrderCountWhatsappSmoothOnlyFix = true;
-
-  const currentSendOrder = window.sendOrder;
-  if(typeof currentSendOrder !== 'function') return;
-
-  const FIREBASE_CONFIG = {
-    apiKey: 'AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA',
-    authDomain: 'medina-bazaar-e2c18.firebaseapp.com',
-    projectId: 'medina-bazaar-e2c18',
-    storageBucket: 'medina-bazaar-e2c18.firebasestorage.app',
-    messagingSenderId: '375693456199',
-    appId: '1:375693456199:web:2b36e0368ed898a7a11262'
-  };
-
-  let firebasePromise = null;
-  let sendBusy = false;
-  let bypassLegacyWhatsappCounter = false;
-  const previousOpen = window.open;
-  const nativeOpen = (window.Window && window.Window.prototype && typeof window.Window.prototype.open === 'function')
-    ? window.Window.prototype.open
-    : null;
-
-  function clean(value){ return String(value == null ? '' : value).trim(); }
-  function currentUser(){
-    try{
-      return JSON.parse(localStorage.getItem('linko_current_member') || localStorage.getItem('lm_current_user') || 'null');
-    }catch(e){ return null; }
-  }
-  function saveCurrentUser(user){
-    try{
-      localStorage.setItem('linko_current_member',JSON.stringify(user));
-      localStorage.setItem('lm_current_user',JSON.stringify(user));
-      window.currentUser = user;
-    }catch(e){}
-  }
-  function setOrderCountUI(count){
-    const value = String(Number(count || 0));
-    ['memberOrdersCount','ordersCount','profileOrdersCount'].forEach(function(id){
-      const element = document.getElementById(id);
-      if(element) element.textContent = value;
-    });
-    try{
-      document.querySelectorAll('.member-stat,.info-box').forEach(function(box){
-        const label = box.querySelector('small');
-        const number = box.querySelector('b');
-        if(label && number && clean(label.textContent).indexOf('طلبات') !== -1) number.textContent = value;
-      });
-    }catch(e){}
-  }
-  function firebase(){
-    if(firebasePromise) return firebasePromise;
-    firebasePromise = Promise.all([
-      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),
-      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')
-    ]).then(function(modules){
-      const appModule = modules[0], firestore = modules[1];
-      const app = appModule.getApps().length ? appModule.getApps()[0] : appModule.initializeApp(FIREBASE_CONFIG);
-      return {db:firestore.getFirestore(app),fs:firestore};
-    });
-    return firebasePromise;
-  }
-  async function findMemberRef(f,user){
-    const id = clean(user && (user.firebaseId || user.memberId || user.docId));
-    if(id) return f.fs.doc(f.db,'members',id);
-    const name = clean(user && (user.name || user.fullName || user.username));
-    const code = clean(user && (user.code || user.password || user.pin));
-    if(!name || !code) return null;
-    const queryRef = f.fs.query(f.fs.collection(f.db,'members'),f.fs.where('name','==',name),f.fs.limit(20));
-    const snapshot = await f.fs.getDocs(queryRef);
-    let found = null;
-    snapshot.forEach(function(docSnap){
-      const data = docSnap.data() || {};
-      if(clean(data.code || data.password || data.pin) === code) found = docSnap.ref;
-    });
-    return found;
-  }
-  async function reconcileOrderCount(){
-    const user = currentUser();
-    if(!user) return;
-    try{
-      const f = await firebase();
-      const memberRef = await findMemberRef(f,user);
-      if(!memberRef) return;
-      const ordersQuery = f.fs.query(f.fs.collection(f.db,'orders'),f.fs.where('memberId','==',memberRef.id));
-      const results = await Promise.all([f.fs.getDocs(ordersQuery),f.fs.getDoc(memberRef)]);
-      const actualCount = results[0].size;
-      const memberSnap = results[1];
-      const memberData = memberSnap.exists() ? (memberSnap.data() || {}) : {};
-      const storedCount = Number(memberData.ordersCount != null ? memberData.ordersCount : memberData.orderCount) || 0;
-      if(storedCount !== actualCount || Number(memberData.orderCount || 0) !== actualCount){
-        await f.fs.setDoc(memberRef,{
-          ordersCount:actualCount,
-          orderCount:actualCount,
-          updatedAt:f.fs.serverTimestamp()
-        },{merge:true});
-      }
-      const merged = Object.assign({},user,memberData,{
-        firebaseId:memberRef.id,
-        memberId:memberRef.id,
-        ordersCount:actualCount,
-        orderCount:actualCount
-      });
-      saveCurrentUser(merged);
-      setOrderCountUI(actualCount);
-    }catch(error){
-      console.warn('LINKO order count reconciliation skipped',error);
-    }
-  }
-
-  // تجاوز عداد واتساب القديم فقط أثناء إرسال الطلب الحالي؛ فتح الروابط الأخرى يبقى كما هو.
-  window.open = function(url,target,features){
-    const address = String(url || '');
-    const isWhatsapp = address.indexOf('wa.me') !== -1 || address.indexOf('api.whatsapp.com') !== -1;
-    if(bypassLegacyWhatsappCounter && isWhatsapp && nativeOpen){
-      return Reflect.apply(nativeOpen,window,[url,target,features]);
-    }
-    return previousOpen.apply(window,arguments);
-  };
-
-  window.__linkoLegacySendOrder10 = async function(){
-    if(sendBusy) return;
-    sendBusy = true;
-    bypassLegacyWhatsappCounter = true;
-    const buttons = Array.prototype.slice.call(document.querySelectorAll('[onclick*="sendOrder"]'));
-    buttons.forEach(function(button){
-      button.dataset.linkoOriginalDisabled = button.disabled ? '1' : '0';
-      button.disabled = true;
-    });
-    try{
-      return await currentSendOrder.apply(this,arguments);
-    }finally{
-      bypassLegacyWhatsappCounter = false;
-      sendBusy = false;
-      buttons.forEach(function(button){
-        button.disabled = button.dataset.linkoOriginalDisabled === '1';
-        delete button.dataset.linkoOriginalDisabled;
-      });
-      // التصحيح يجري بالخلفية ولا يؤخر فتح واتساب.
-      setTimeout(reconcileOrderCount,180);
-    }
-  };
-
-  // تصحيح أي عداد سابق زائد اعتمادًا على عدد الطلبات الحقيقي فقط.
-  setTimeout(reconcileOrderCount,1200);
-})();
-</script><!-- ===== LINKO 7.8 FINAL: EXACT ORDER COUNTER + SMOOTH MENUS ONLY ===== --><style id="linkoStage78SmoothOnlyStyle">
+</script><!-- ===== LINKO STAGE 7.7: ORDER COUNT + WHATSAPP SMOOTH ROOT FIX ONLY ===== --><!-- ===== LINKO 7.8 FINAL: EXACT ORDER COUNTER + SMOOTH MENUS ONLY ===== --><style id="linkoStage78SmoothOnlyStyle">
 /* تسريع الرسم فقط بدون تغيير الشكل */
 .side-menu,.menu-panel,.bottom-nav,.app-page,.member-card,.profile-hero{
   -webkit-transform:translateZ(0);
@@ -16976,110 +14783,14 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
   if(window.__linkoStage78ExactCounterSmoothMenusOnly) return;
   window.__linkoStage78ExactCounterSmoothMenusOnly = true;
 
-  const FIREBASE_CONFIG={
-    apiKey:'AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA',
-    authDomain:'medina-bazaar-e2c18.firebaseapp.com',
-    projectId:'medina-bazaar-e2c18',
-    storageBucket:'medina-bazaar-e2c18.firebasestorage.app',
-    messagingSenderId:'375693456199',
-    appId:'1:375693456199:web:2b36e0368ed898a7a11262'
-  };
-
-  let firebasePromise=null;
-  let ordersUnsubscribe=null;
-  let watchedMemberId='';
-  let memberWriteBusy=false;
-  let lastExactCount=-1;
-  let restartTimer=0;
-
   function clean(value){return String(value==null?'':value).trim()}
-  function getUser(){
-    try{return JSON.parse(localStorage.getItem('linko_current_member')||localStorage.getItem('lm_current_user')||'null')}catch(e){return null}
-  }
-  function saveUser(user){
-    try{
-      localStorage.setItem('linko_current_member',JSON.stringify(user));
-      localStorage.setItem('lm_current_user',JSON.stringify(user));
-      window.currentUser=user;
-    }catch(e){}
-  }
+  function getUser(){try{return JSON.parse(localStorage.getItem('linko_current_member')||localStorage.getItem('lm_current_user')||'null')}catch(e){return null}}
   function setCountUI(count){
     const value=String(Math.max(0,Number(count)||0));
-    ['memberOrdersCount','ordersCount','profileOrdersCount'].forEach(function(id){
-      const el=document.getElementById(id);
-      if(el&&el.textContent!==value)el.textContent=value;
-    });
-    try{
-      document.querySelectorAll('.member-stat,.info-box').forEach(function(box){
-        const label=box.querySelector('small');
-        const number=box.querySelector('b');
-        if(label&&number&&clean(label.textContent).indexOf('طلبات')!==-1&&number.textContent!==value){
-          number.textContent=value;
-        }
-      });
-    }catch(e){}
+    ['memberOrdersCount','ordersCount','profileOrdersCount'].forEach(function(id){const el=document.getElementById(id);if(el&&el.textContent!==value)el.textContent=value;});
+    try{document.querySelectorAll('.member-stat,.info-box').forEach(function(box){const label=box.querySelector('small'),number=box.querySelector('b');if(label&&number&&clean(label.textContent).indexOf('طلبات')!==-1&&number.textContent!==value)number.textContent=value;});}catch(e){}
   }
-  function firebase(){
-    if(firebasePromise)return firebasePromise;
-    firebasePromise=Promise.all([
-      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),
-      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')
-    ]).then(function(modules){
-      const appModule=modules[0],fs=modules[1];
-      const app=appModule.getApps().length?appModule.getApps()[0]:appModule.initializeApp(FIREBASE_CONFIG);
-      return {db:fs.getFirestore(app),fs:fs};
-    });
-    return firebasePromise;
-  }
-  async function memberRefFor(f,user){
-    const id=clean(user&&(user.firebaseId||user.memberId||user.docId));
-    if(id)return f.fs.doc(f.db,'members',id);
-    const name=clean(user&&(user.name||user.fullName||user.username));
-    const code=clean(user&&(user.code||user.password||user.pin));
-    if(!name||!code)return null;
-    const q=f.fs.query(f.fs.collection(f.db,'members'),f.fs.where('name','==',name),f.fs.limit(20));
-    const snap=await f.fs.getDocs(q);
-    let found=null;
-    snap.forEach(function(docSnap){
-      const data=docSnap.data()||{};
-      if(clean(data.code||data.password||data.pin)===code)found=docSnap.ref;
-    });
-    return found;
-  }
-  async function publishExactCount(f,memberRef,count){
-    const exact=Math.max(0,Number(count)||0);
-    setCountUI(exact);
-    const user=getUser();
-    if(user){
-      saveUser(Object.assign({},user,{firebaseId:memberRef.id,memberId:memberRef.id,ordersCount:exact,orderCount:exact}));
-    }
-    if(memberWriteBusy)return;
-    memberWriteBusy=true;
-    try{
-      const snap=await f.fs.getDoc(memberRef);
-      const data=snap.exists()?(snap.data()||{}):{};
-      const a=Number(data.ordersCount||0),b=Number(data.orderCount||0);
-      if(a!==exact||b!==exact){
-        await f.fs.setDoc(memberRef,{ordersCount:exact,orderCount:exact,updatedAt:f.fs.serverTimestamp()},{merge:true});
-      }
-    }catch(e){console.warn('LINKO exact order counter update skipped',e)}
-    finally{memberWriteBusy=false}
-  }
-  async function startExactCounter(force){
-    // RADICAL READ MODE: disabled collection-wide order counting.
-    const user=getUser();
-    if(user)setCountUI(Number(user.ordersCount||user.orderCount||0));
-  }
-  function restartCounterSoon(){ const user=getUser(); if(user)setCountUI(Number(user.ordersCount||user.orderCount||0)); }
-  // Order count is maintained atomically on the member document when a new order is created.
-  const logoutBeforeExactSync=window.logout;
-  if(typeof logoutBeforeExactSync==='function'){
-    window.logout=function(){
-      try{if(ordersUnsubscribe)ordersUnsubscribe()}catch(e){}
-      ordersUnsubscribe=null;watchedMemberId='';lastExactCount=-1;
-      return logoutBeforeExactSync.apply(this,arguments);
-    };
-  }
+  function syncLocalCount(){const user=getUser();if(user)setCountUI(Number(user.ordersCount||user.orderCount||0));}
 
   function patchAdminFrame(){
     const frame=document.getElementById('linkoAdminFrame');
@@ -17089,53 +14800,23 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
       if(!d.body)return false;
       if(w.__linkoStage78SmoothAdminMenusOnly)return true;
       w.__linkoStage78SmoothAdminMenusOnly=true;
-
-      /* منع التحديث الثقيل المتكرر كل 1.2 ثانية مع إبقاء التحديث اليدوي والفوري. */
       if(typeof w.linkoFinalMembersRefresh==='function'){
-        const originalRefresh=w.linkoFinalMembersRefresh;
-        let lastRefresh=0;
-        w.linkoFinalMembersRefresh=function(force){
-          const now=Date.now();
-          if(force!==true&&now-lastRefresh<8000)return;
-          lastRefresh=now;
-          return originalRefresh.apply(this,arguments);
-        };
+        const originalRefresh=w.linkoFinalMembersRefresh;let lastRefresh=0;
+        w.linkoFinalMembersRefresh=function(force){const now=Date.now();if(force!==true&&now-lastRefresh<8000)return;lastRefresh=now;return originalRefresh.apply(this,arguments);};
       }
-
-      /* ضغطة قائمة واحدة = رسم واحد في الفريم التالي، بدون تكرار أو تجميد. */
       if(typeof w.openSec==='function'){
-        const originalOpenSec=w.openSec;
-        let queuedId='';
-        let frameId=0;
-        w.openSec=function(id){
-          queuedId=id;
-          if(frameId)return;
-          frameId=w.requestAnimationFrame(function(){
-            frameId=0;
-            const next=queuedId;queuedId='';
-            try{return originalOpenSec.call(w,next)}catch(e){console.warn('LINKO smooth admin menu fallback',e)}
-          });
-        };
+        const originalOpenSec=w.openSec;let queuedId='',frameId=0;
+        w.openSec=function(id){queuedId=id;if(frameId)return;frameId=w.requestAnimationFrame(function(){frameId=0;const next=queuedId;queuedId='';try{return originalOpenSec.call(w,next)}catch(e){console.warn('LINKO smooth admin menu fallback',e)}});};
       }
-
-      const style=d.createElement('style');
-      style.id='linkoStage78AdminGpuSmoothStyle';
-      style.textContent='.sidebar,.main,nav,.panel{backface-visibility:hidden}.sidebar{will-change:transform}.main{contain:layout style}.sidebar.open{transform:translateZ(0)}';
-      if(!d.getElementById(style.id))d.head.appendChild(style);
+      const style=d.createElement('style');style.id='linkoStage78AdminGpuSmoothStyle';style.textContent='.sidebar,.main,nav,.panel{backface-visibility:hidden}.sidebar{will-change:transform}.main{contain:layout style}.sidebar.open{transform:translateZ(0)}';if(!d.getElementById(style.id))d.head.appendChild(style);
       return true;
     }catch(e){return false}
   }
-  function retryAdmin(attempt){
-    if(patchAdminFrame())return;
-    if(attempt<24)setTimeout(function(){retryAdmin(attempt+1)},250);
-  }
-
-  document.addEventListener('DOMContentLoaded',function(){startExactCounter(false);retryAdmin(0)});
-  window.addEventListener('load',function(){startExactCounter(false);retryAdmin(0)});
-  const adminFrame=document.getElementById('linkoAdminFrame');
-  if(adminFrame)adminFrame.addEventListener('load',function(){retryAdmin(0)});
-  startExactCounter(false);
-  retryAdmin(0);
+  function retryAdmin(attempt){if(patchAdminFrame())return;if(attempt<24)setTimeout(function(){retryAdmin(attempt+1)},250);}
+  document.addEventListener('DOMContentLoaded',function(){syncLocalCount();retryAdmin(0)});
+  window.addEventListener('load',function(){syncLocalCount();retryAdmin(0)});
+  const adminFrame=document.getElementById('linkoAdminFrame');if(adminFrame)adminFrame.addEventListener('load',function(){retryAdmin(0)});
+  syncLocalCount();retryAdmin(0);
 })();
 </script><!-- LINKO PHASE 9.3A-2 MEMBER AUTH IDENTITY FOUNDATION ONLY --><!-- LINKO PHASE 9.3A-2 MEMBER AUTH SELF-VERIFY ONLY --><!-- LINKO PHASE 9.3A-3 LOCAL AVATAR ROOT FIX: SINGLE HANDLER + PERSISTENCE --><script id="linkoPhase93A3LocalAvatarPersistentRootFix">
 (function(){
@@ -17526,7 +15207,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
   window.__linkoFinalExactMemberIdentityNoTouch = true;
 
   const CFG={apiKey:'AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA',authDomain:'medina-bazaar-e2c18.firebaseapp.com',projectId:'medina-bazaar-e2c18',storageBucket:'medina-bazaar-e2c18.firebasestorage.app',messagingSenderId:'375693456199',appId:'1:375693456199:web:2b36e0368ed898a7a11262'};
-  let firebasePromise=null,memberUnsubscribe=null,loginBusy=false;
+  let firebasePromise=null,loginBusy=false;
 
   function clean(v){return String(v==null?'':v).trim();}
   function normalizeName(v){
@@ -17570,7 +15251,6 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
     });
   }
   function clearMember(){
-    try{if(memberUnsubscribe){memberUnsubscribe();memberUnsubscribe=null;}}catch(e){}
     try{localStorage.removeItem('linko_current_member');localStorage.removeItem('lm_current_user');localStorage.removeItem('currentUser');}catch(e){}
     try{window.currentUser=null;}catch(e){}
     try{currentUser=null;}catch(e){}
@@ -17580,17 +15260,6 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
     try{currentUser=user;}catch(e){}
     try{localStorage.setItem('linko_current_member',JSON.stringify(user));localStorage.setItem('lm_current_user',JSON.stringify(user));}catch(e){}
   }
-  function syncMember(f,id){
-    try{if(memberUnsubscribe)memberUnsubscribe();}catch(e){}
-    memberUnsubscribe=window.__linkoReadHub.subscribeMember(f,id,function(snapshot){
-      if(!snapshot.exists())return;
-      const user=memberFromDoc(snapshot);
-      if(!activeMember(user)){clearMember();try{if(typeof go==='function')go('authPage');}catch(e){}return;}
-      saveMember(user);
-      try{if(typeof fillUser==='function')fillUser();}catch(e){}
-    },function(error){console.warn('LINKO member sync skipped',error);});
-  }
-
   window.login=async function(event){
     if(event&&event.preventDefault)event.preventDefault();
     if(loginBusy)return false;
@@ -17651,7 +15320,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
         for(const field of ['name','username','fullName']){
           if(matches.length)break;
           try{
-            const q=f.fs.query(col,f.fs.where(field,'==',name),f.fs.limit(5));
+            const q=f.fs.query(col,f.fs.where(field,'==',name),f.fs.limit(3));
             const snap=await f.fs.getDocs(q);
             snap.forEach(function(doc){if(!seen.has(doc.id)&&matchesCredentials(doc)){seen.add(doc.id);matches.push(doc);}});
           }catch(e){console.warn('LINKO targeted name login query skipped',field,e);}
@@ -17662,7 +15331,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
           for(const field of ['code','password','pin']){
             if(matches.length)break;
             try{
-              const q=f.fs.query(col,f.fs.where(field,'==',wantedCode),f.fs.limit(20));
+              const q=f.fs.query(col,f.fs.where(field,'==',wantedCode),f.fs.limit(3));
               const snap=await f.fs.getDocs(q);
               snap.forEach(function(doc){if(!seen.has(doc.id)&&matchesCredentials(doc)){seen.add(doc.id);matches.push(doc);}});
             }catch(e){console.warn('LINKO targeted code login query skipped',field,e);}
@@ -17678,11 +15347,9 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
       if(!selected)throw new Error('INVALID_LOGIN');
       const user=memberFromDoc(selected);
       saveMember(user);
-      syncMember(f,user.firebaseId);
       // RADICAL V2: notifications are fetched only when the notifications page is opened.
       try{if(typeof fillUser==='function')fillUser();}catch(e){}
       try{if(typeof go==='function')go('homePage');}catch(e){}
-      try{if(typeof window.linkoRefreshMember==='function')window.linkoRefreshMember();}catch(e){}
       try{if(typeof toast==='function')toast('تم تسجيل الدخول بنجاح');}catch(e){}
       return false;
     }catch(error){
@@ -18241,37 +15908,8 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
   }
 
   async function resolveMemberRef(f, member){
-    const possibleId = clean(member.firebaseId || member.memberId || member.docId);
-    if(possibleId){
-      try{
-        const ref = f.fs.doc(f.db, 'members', possibleId);
-        const snap = await f.fs.getDoc(ref);
-        if(snap.exists()) return ref;
-      }catch(e){}
-    }
-
-    const wantedNames = [
-      member.name, member.fullName, member.username
-    ].map(clean).filter(Boolean);
-    const wantedCode = clean(member.code || member.password || member.pin);
-    const wantedPhone = clean(member.phone || member.mobile);
-
-    const snap = await f.fs.getDocs(f.fs.collection(f.db, 'members'));
-    let exact = null;
-    let namePhone = null;
-
-    snap.forEach(docSnap => {
-      const data = docSnap.data() || {};
-      const names = [data.name, data.fullName, data.username].map(clean);
-      const nameMatch = wantedNames.some(name => names.includes(name));
-      const codeMatch = wantedCode && clean(data.code || data.password || data.pin) === wantedCode;
-      const phoneMatch = wantedPhone && clean(data.phone || data.mobile) === wantedPhone;
-
-      if(!exact && nameMatch && codeMatch) exact = docSnap.ref;
-      if(!namePhone && nameMatch && phoneMatch) namePhone = docSnap.ref;
-    });
-
-    return exact || namePhone;
+    const possibleId = clean(member && (member.firebaseId || member.memberId || member.docId || member.id));
+    return possibleId ? f.fs.doc(f.db, 'members', possibleId) : null;
   }
 
   function normalizeItems(rows){
@@ -18440,7 +16078,10 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
       if(!memberRef) throw new Error('member-not-found');
 
       const memberSnap = await f.fs.getDoc(memberRef);
-      const memberData = memberSnap.exists() ? (memberSnap.data() || {}) : {};
+      if(!memberSnap.exists()) throw new Error('member-not-found');
+      const memberData = memberSnap.data() || {};
+      const memberStatus = clean(memberData.status).toLowerCase();
+      if(memberData.deleted === true || ['deleted','removed','stopped','inactive','blocked','rejected','موقوف','محذوف','مرفوض'].includes(memberStatus)) throw new Error('member-inactive');
 
       contact.name = clean(memberData.name || memberData.fullName || memberData.username) || contact.name;
       contact.phone = clean(memberData.phone || memberData.mobile) || contact.phone;
@@ -18492,22 +16133,16 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
         source:'member_order'
       };
 
-      // حفظ وثيقة الطلب أولاً في نفس المجموعة التي تقرأ منها الإدارة.
-      await f.fs.setDoc(orderRef, payload);
-
-      // احتساب العدد الحقيقي بعد الحفظ، ثم تحديث وثيقة العضو.
-      const memberOrdersQuery = f.fs.query(
-        f.fs.collection(f.db,'orders'),
-        f.fs.where('memberId','==',memberRef.id)
-      );
-      const ordersSnapshot = await f.fs.getDocs(memberOrdersQuery);
-      const exactCount = ordersSnapshot.size;
-
-      await f.fs.setDoc(memberRef, {
-        ordersCount:exactCount,
-        orderCount:exactCount,
+      // RADICAL READ ARCHITECTURE: one atomic write path; never recount historical orders.
+      const exactCount = Number(memberData.ordersCount || memberData.orderCount || member.ordersCount || member.orderCount || 0) + 1;
+      const batch = f.fs.writeBatch(f.db);
+      batch.set(orderRef, payload);
+      batch.update(memberRef, {
+        ordersCount:f.fs.increment(1),
+        orderCount:f.fs.increment(1),
         updatedAt:f.fs.serverTimestamp()
-      }, {merge:true});
+      });
+      await batch.commit();
 
       const updatedMember = Object.assign({}, member, memberData, {
         firebaseId:memberRef.id,
@@ -18528,7 +16163,9 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
       console.error('ROOT ORDER SAVE ERROR', error);
       notify(error && error.message === 'member-not-found'
         ? 'تعذر تحديد حساب العضو. سجل الخروج وادخل من جديد.'
-        : 'تعذر تسجيل الطلب الآن. تأكد من الإنترنت وحاول مرة ثانية.');
+        : error && error.message === 'member-inactive'
+          ? 'حساب العضو غير مفعل حالياً. راجع الإدارة.'
+          : 'تعذر تسجيل الطلب الآن. تأكد من الإنترنت وحاول مرة ثانية.');
     }finally{
       sending = false;
       buttons.forEach(button => button.disabled = false);
@@ -18537,271 +16174,48 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
 })();
 </script>
 
-<script id="linkoFirestoreReadsRootFixV23">
-(function(){
-  'use strict';
-  if(window.__linkoFirestoreReadsRootFixV23) return;
-  window.__linkoFirestoreReadsRootFixV23 = true;
 
-  let lastRefreshAt = 0;
-
-  function refreshMemberOnce(){
-    const now = Date.now();
-    if(now - lastRefreshAt < 60000) return;
-    lastRefreshAt = now;
-
-    try{
-      if(typeof refreshMemberFromFirebase === 'function'){
-        refreshMemberFromFirebase(false);
-        return;
-      }
-    }catch(e){}
-
-    try{
-      if(typeof refreshMember === 'function') refreshMember();
-    }catch(e){}
-  }
-
-  document.addEventListener('visibilitychange',function(){
-    if(document.visibilityState === 'visible') refreshMemberOnce();
-  });
-
-  window.addEventListener('pageshow',refreshMemberOnce);
-  window.addEventListener('online',refreshMemberOnce);
-})();
-</script>
 <!-- LINKO_FIRESTORE_READ_OPTIMIZATION_PHASE2_MEMBER_THROTTLE_20260821 -->
-<script id="linkoReadOptimizationPhase2MemberRefreshThrottle">
-(function(){
-  'use strict';
-  if(window.__linkoReadOptimizationPhase2MemberRefreshThrottle) return;
-  window.__linkoReadOptimizationPhase2MemberRefreshThrottle=true;
-  function wrap(name){
-    const original=window[name];
-    if(typeof original!=='function'||original.__linkoReadThrottleV2)return;
-    let lastAt=0,inflight=null;
-    const wrapped=function(force){
-      const now=Date.now();
-      if(force!==true && now-lastAt<30000) return inflight||Promise.resolve();
-      lastAt=now;
-      try{
-        const result=original.apply(this,arguments);
-        inflight=Promise.resolve(result).catch(function(){return undefined;}).finally(function(){inflight=null;});
-        return result;
-      }catch(error){inflight=null;throw error;}
-    };
-    wrapped.__linkoReadThrottleV2=true;
-    window[name]=wrapped;
-  }
-  wrap('refreshMember');
-  wrap('refreshMemberFromFirebase');
-})();
-</script>
+
 <style id="linkoAuthoritativeCreatedDateV31Style">
 #profileCreated.linko-created-loading{
   opacity:0!important;
 }
 </style>
 
-<script id="linkoAuthoritativeCreatedDateV31">
+<script id="linkoAuthoritativeCreatedDateLocalOnly">
 (function(){
   'use strict';
-  if(window.__linkoAuthoritativeCreatedDateV31) return;
-  window.__linkoAuthoritativeCreatedDateV31 = true;
-
-  const FIREBASE_CONFIG = {
-    apiKey:'AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA',
-    authDomain:'medina-bazaar-e2c18.firebaseapp.com',
-    projectId:'medina-bazaar-e2c18',
-    storageBucket:'medina-bazaar-e2c18.firebasestorage.app',
-    messagingSenderId:'375693456199',
-    appId:'1:375693456199:web:2b36e0368ed898a7a11262'
-  };
-
-  let firebasePromise = null;
-  let loadingPromise = null;
-  let lastMemberKey = '';
-
-  function clean(value){
-    return String(value == null ? '' : value).trim();
-  }
-
+  if(window.__linkoAuthoritativeCreatedDateLocalOnly) return;
+  window.__linkoAuthoritativeCreatedDateLocalOnly=true;
+  function clean(value){return String(value==null?'':value).trim()}
   function currentUser(){
-    try{
-      if(window.currentUser) return window.currentUser;
-      return JSON.parse(
-        localStorage.getItem('linko_current_member') ||
-        localStorage.getItem('lm_current_user') ||
-        'null'
-      );
-    }catch(e){
-      return null;
-    }
+    try{if(window.currentUser)return window.currentUser}catch(e){}
+    try{return JSON.parse(localStorage.getItem('linko_current_member')||localStorage.getItem('lm_current_user')||'null')}catch(e){return null}
   }
-
-  function firebase(){
-    if(firebasePromise) return firebasePromise;
-    firebasePromise = Promise.all([
-      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),
-      import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')
-    ]).then(function(modules){
-      const appModule = modules[0];
-      const fs = modules[1];
-      const app = appModule.getApps().length
-        ? appModule.getApps()[0]
-        : appModule.initializeApp(FIREBASE_CONFIG);
-      return {db:fs.getFirestore(app),fs:fs};
-    });
-    return firebasePromise;
-  }
-
   function formatDate(value){
     try{
-      if(!value) return '';
-      let date = null;
-
-      if(typeof value.toDate === 'function'){
-        date = value.toDate();
-      }else if(typeof value.seconds === 'number'){
-        date = new Date(value.seconds * 1000);
-      }else if(value instanceof Date){
-        date = value;
-      }else{
-        const parsed = new Date(value);
-        if(!Number.isNaN(parsed.getTime())) date = parsed;
-      }
-
-      return date && !Number.isNaN(date.getTime())
-        ? date.toLocaleDateString('ar-IQ')
-        : '';
-    }catch(e){
-      return '';
-    }
+      if(!value)return '';
+      let date=null;
+      if(typeof value.toDate==='function')date=value.toDate();
+      else if(typeof value.seconds==='number')date=new Date(value.seconds*1000);
+      else if(value instanceof Date)date=value;
+      else{const parsed=new Date(value);if(!Number.isNaN(parsed.getTime()))date=parsed;}
+      return date&&!Number.isNaN(date.getTime())?date.toLocaleDateString('ar-IQ'):'';
+    }catch(e){return ''}
   }
-
-  function setCreatedValue(value){
-    const text = value || 'غير محدد';
-    const direct = document.getElementById('profileCreated');
-    if(direct){
-      direct.textContent = text;
-      direct.classList.remove('linko-created-loading');
-    }
-
+  function render(){
+    const user=currentUser()||{};
+    const text=formatDate(user.createdAt)||formatDate(user.approvedAt)||formatDate(user.created)||formatDate(user.joinedAt)||'غير محدد';
+    const direct=document.getElementById('profileCreated');
+    if(direct){direct.textContent=text;direct.classList.remove('linko-created-loading');}
     document.querySelectorAll('.info-box').forEach(function(box){
-      const label = box.querySelector('small');
-      const result = box.querySelector('b');
-      if(label && result && clean(label.textContent).indexOf('تاريخ الإنشاء') !== -1){
-        result.textContent = text;
-        result.classList.remove('linko-created-loading');
-      }
+      const label=box.querySelector('small'),result=box.querySelector('b');
+      if(label&&result&&clean(label.textContent).indexOf('تاريخ الإنشاء')!==-1){result.textContent=text;result.classList.remove('linko-created-loading');}
     });
   }
-
-  function hideTemporaryDate(){
-    const direct = document.getElementById('profileCreated');
-    if(direct) direct.classList.add('linko-created-loading');
-
-    document.querySelectorAll('.info-box').forEach(function(box){
-      const label = box.querySelector('small');
-      const result = box.querySelector('b');
-      if(label && result && clean(label.textContent).indexOf('تاريخ الإنشاء') !== -1){
-        result.classList.add('linko-created-loading');
-      }
-    });
-  }
-
-  async function resolveMember(f,user){
-    const directId = clean(user && (user.firebaseId || user.memberId || user.docId));
-    if(directId){
-      const ref = f.fs.doc(f.db,'members',directId);
-      const snap = await f.fs.getDoc(ref);
-      if(snap.exists()) return snap;
-    }
-
-    const wantedName = clean(user && (user.name || user.username || user.fullName));
-    const wantedCode = clean(user && (user.code || user.password || user.pin));
-
-    if(!wantedName || !wantedCode) return null;
-
-    const snapshot = await f.fs.getDocs(f.fs.collection(f.db,'members'));
-    let found = null;
-
-    snapshot.forEach(function(docSnap){
-      if(found) return;
-      const data = docSnap.data() || {};
-      const names = [data.name,data.username,data.fullName].map(clean);
-      const codes = [data.code,data.password,data.pin].map(clean);
-
-      if(names.includes(wantedName) && codes.includes(wantedCode)){
-        found = docSnap;
-      }
-    });
-
-    return found;
-  }
-
-  async function refreshCreatedDate(force){
-    const user = currentUser();
-    if(!user) return;
-
-    const key = clean(user.firebaseId || user.memberId || user.name || user.username);
-    if(!force && loadingPromise && key === lastMemberKey) return loadingPromise;
-
-    lastMemberKey = key;
-    hideTemporaryDate();
-
-    loadingPromise = (async function(){
-      try{
-        const f = await firebase();
-        const snap = await resolveMember(f,user);
-
-        if(!snap || !snap.exists()){
-          setCreatedValue('غير محدد');
-          return;
-        }
-
-        const data = snap.data() || {};
-        const created =
-          formatDate(data.createdAt) ||
-          formatDate(data.approvedAt) ||
-          formatDate(data.created) ||
-          formatDate(data.joinedAt) ||
-          'غير محدد';
-
-        setCreatedValue(created);
-      }catch(error){
-        console.warn('LINKO authoritative created date failed',error);
-        setCreatedValue('غير محدد');
-      }finally{
-        loadingPromise = null;
-      }
-    })();
-
-    return loadingPromise;
-  }
-
-  const previousGo = window.go;
-  if(typeof previousGo === 'function'){
-    window.go = function(pageId){
-      const result = previousGo.apply(this,arguments);
-      if(pageId === 'profilePage'){
-        setTimeout(function(){ refreshCreatedDate(true); },0);
-      }
-      return result;
-    };
-  }
-
-  document.addEventListener('DOMContentLoaded',function(){
-    hideTemporaryDate();
-    // RADICAL READ MODE: fetch authoritative creation date only when Profile is opened.
-  });
-
-  window.addEventListener('pageshow',function(){
-    const page = document.getElementById('profilePage');
-    if(page && page.classList.contains('active')){
-      refreshCreatedDate(true);
-    }
-  });
+  const previousGo=window.go;
+  if(typeof previousGo==='function')window.go=function(pageId){const result=previousGo.apply(this,arguments);if(pageId==='profilePage')setTimeout(render,0);return result;};
 })();
 </script>
 
@@ -18897,7 +16311,7 @@ body.linko-dark .linko-rating-card textarea{background:#111827;color:#fff;border
   };
   const CONTROLS='productControls';
   const ORDERS='orders';
-  let fbPromise=null,priceUnsub=null,memberSessionUnsub=null;
+  let fbPromise=null,priceUnsub=null;
   let savedPrices=new Map(),memberRefreshDirty=false,sessionDisabled=false;
   let ratingOrderId='',ratingStars=0;
 
@@ -19244,33 +16658,15 @@ body.linko-dark .linko-rating-card textarea{background:#111827;color:#fff;border
     try{if(typeof fillUser==='function')fillUser()}catch(e){}
     try{if(typeof go==='function')go('homePage')}catch(e){}
   }
-  async function verifySavedMember(u){
-    const id=memberId(u);if(!id||sessionDisabled)return;
-    try{
-      const f=await firebase();
-      if(memberSessionUnsub)memberSessionUnsub();
-      memberSessionUnsub=window.__linkoReadHub.subscribeMember(f,id,function(snap){
-        if(sessionDisabled)return;
-        if(!snap.exists()){clearSavedMember();try{go('authPage')}catch(e){};return}
-        const d=Object.assign({},u,snap.data()||{},{
-          id:id,firebaseId:id,memberId:id,docId:id
-        });
-        if(!activeMember(d)){clearSavedMember();toastSafe('تم إيقاف الحساب من الإدارة');try{go('authPage')}catch(e){};return}
-        saveMember(d);
-        try{if(typeof fillUser==='function')fillUser()}catch(e){}
-      },function(err){console.warn('LINKO saved member session verify skipped',err)});
-    }catch(e){console.warn('LINKO saved member session Firebase init skipped',e)}
-  }
   function resumeMemberSession(){
     if(sessionDisabled)return;
     const u=savedMember();if(!u)return;
-    showSavedMember(u);verifySavedMember(u);
+    showSavedMember(u);
   }
   const oldLogoutFinal=window.logout;
   if(typeof oldLogoutFinal==='function'){
     window.logout=function(){
       sessionDisabled=true;
-      try{if(memberSessionUnsub){memberSessionUnsub();memberSessionUnsub=null}}catch(e){}
       clearSavedMember();
       return oldLogoutFinal.apply(this,arguments);
     };
@@ -19279,9 +16675,7 @@ body.linko-dark .linko-rating-card textarea{background:#111827;color:#fff;border
   if(typeof oldLoginFinal==='function'){
     window.login=async function(){
       sessionDisabled=false;
-      const r=await oldLoginFinal.apply(this,arguments);
-      setTimeout(function(){const u=savedMember();if(u)verifySavedMember(u)},250);
-      return r;
+      return await oldLoginFinal.apply(this,arguments);
     };
   }
 
