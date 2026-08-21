@@ -6261,7 +6261,7 @@ setInterval(finalFixLinkoBranch,1000);
 (function(){
   function injectIntoAdmin(){
     var frame=document.getElementById('linkoAdminFrame');
-    if(!frame || !frame.contentWindow || !frame.contentDocument) return false;
+    if(!frame || !frame.__linkoAdminLoaded || !frame.contentWindow || !frame.contentDocument) return false;
     var d=frame.contentDocument;
     if(!d.body) return false;
     if(d.getElementById('linko-inner-image-nav-fix')) return true;
@@ -6817,7 +6817,7 @@ else {try{renderBranches();}catch(e){}}
 (function(){
   function applyAdminFix(){
     var frame=document.getElementById('linkoAdminFrame');
-    if(!frame || !frame.contentWindow || !frame.contentDocument) return false;
+    if(!frame || !frame.__linkoAdminLoaded || !frame.contentWindow || !frame.contentDocument) return false;
     var w=frame.contentWindow, d=frame.contentDocument;
     if(!d.body) return false;
     if(!d.getElementById('linkoAdminNoBranchImagesStyle')){
@@ -7940,7 +7940,7 @@ if(form) form.reset();
   }
   function patchAdminFrame(){
     const frame = document.getElementById('linkoAdminFrame');
-    if(!frame || !frame.contentDocument || !frame.contentWindow) return;
+    if(!frame || !frame.__linkoAdminLoaded || !frame.contentDocument || !frame.contentWindow) return;
     try{
       const w = frame.contentWindow, doc = frame.contentDocument;
       if(!doc.body) return;
@@ -7948,7 +7948,11 @@ if(form) form.reset();
       else if(typeof w.linkoPhase5Refresh === 'function') w.linkoPhase5Refresh();
     }catch(e){ console.warn('phase5 admin patch waiting', e); }
   }
-  function boot(){ patchAdminFrame(); setTimeout(patchAdminFrame,300); setTimeout(patchAdminFrame,1000); setTimeout(patchAdminFrame,2200); }
+  function boot(){
+    const frame=document.getElementById('linkoAdminFrame');
+    if(frame&&!frame.__linkoPhase5DataRequestsLoadBound){frame.__linkoPhase5DataRequestsLoadBound=true;frame.addEventListener('load',patchAdminFrame);}
+    patchAdminFrame(); setTimeout(patchAdminFrame,300); setTimeout(patchAdminFrame,1000); setTimeout(patchAdminFrame,2200);
+  }
   document.addEventListener('DOMContentLoaded', boot);
   window.addEventListener('load', boot);
   // V50: no continuous admin-frame polling; load/open hooks handle refresh.
@@ -8102,23 +8106,19 @@ if(form) form.reset();
   window.fillUser = function(){
     let r;
     try{ if(typeof oldFill==='function') r=oldFill.apply(this,arguments); }catch(e){ console.warn(e); }
-    setTimeout(function(){ refreshMemberFromFirebase(true); },80);
-    setTimeout(function(){ refreshMemberFromFirebase(true); },450);
     return r;
   };
   const oldGo = window.go;
   window.go = function(id){
     let r;
     try{ if(typeof oldGo==='function') r=oldGo.apply(this,arguments); }catch(e){ console.warn(e); }
-    if(id==='homePage' || id==='profilePage') setTimeout(function(){ refreshMemberFromFirebase(true); },80);
     return r;
   };
   const oldLogout = window.logout;
   if(typeof oldLogout === 'function'){
     window.logout = function(){ lastMemberKey=''; try{return oldLogout.apply(this,arguments);}catch(e){console.warn(e);} };
   }
-  document.addEventListener('DOMContentLoaded',function(){ setTimeout(function(){refreshMemberFromFirebase(true);},300); });
-  window.addEventListener('load',function(){ setTimeout(function(){refreshMemberFromFirebase(true);},500); });
+  // RADICAL V2: no member Firestore read on generic DOM/load events.
   /* LINKO FIRESTORE READS ROOT FIX: removed 2.5-second refreshMemberFromFirebase polling. */
 
   // سجل العمليات للمرحلة الخامسة داخل لوحة الإدارة بدون تغيير الواجهة.
@@ -8164,7 +8164,7 @@ if(form) form.reset();
   }.toString() + ')();'; }
   function patchAdminFrame(){
     const frame=document.getElementById('linkoAdminFrame');
-    if(!frame || !frame.contentDocument || !frame.contentWindow) return;
+    if(!frame || !frame.__linkoAdminLoaded || !frame.contentDocument || !frame.contentWindow) return;
     try{
       const w=frame.contentWindow, doc=frame.contentDocument;
       if(!doc.body) return;
@@ -8380,7 +8380,7 @@ if(form) form.reset();
   }.toString()+')();'; }
   function patchFrame(){
     const frame=document.getElementById('linkoAdminFrame');
-    if(!frame||!frame.contentDocument||!frame.contentDocument.body) return;
+    if(!frame||!frame.__linkoAdminLoaded||!frame.contentDocument||!frame.contentDocument.body) return;
     try{ const w=frame.contentWindow, doc=frame.contentDocument; if(w.__linkoPhase5NoDuplicateMembersAndLogs) return; const sc=doc.createElement('script'); sc.textContent=adminPatch(); doc.body.appendChild(sc); }catch(e){console.warn('admin frame patch failed',e);}
   }
   setInterval(patchFrame,1200);
@@ -8494,7 +8494,7 @@ if(form) form.reset();
     },true);
   }.toString()+')();';}
   function patchAdminFrame(){
-    const fr=document.getElementById('linkoAdminFrame'); if(!fr||!fr.contentDocument||!fr.contentDocument.body)return;
+    const fr=document.getElementById('linkoAdminFrame'); if(!fr||!fr.__linkoAdminLoaded||!fr.contentDocument||!fr.contentDocument.body)return;
     try{const w=fr.contentWindow,doc=fr.contentDocument; if(w.__linkoAdminMenuFirstTapStableFinal)return; const sc=doc.createElement('script'); sc.textContent=adminMenuPatchCode(); doc.body.appendChild(sc);}catch(e){}
   }
 
@@ -8629,7 +8629,7 @@ if(form) form.reset();
     window.linkoMembersLiveRefresh=startMembers;
   }.toString()+')();'}
   function patchAdminFrame(){
-    const fr=document.getElementById('linkoAdminFrame'); if(!fr||!fr.contentDocument||!fr.contentDocument.body)return;
+    const fr=document.getElementById('linkoAdminFrame'); if(!fr||!fr.__linkoAdminLoaded||!fr.contentDocument||!fr.contentDocument.body)return;
     try{const w=fr.contentWindow,doc=fr.contentDocument; if(!w.__linkoPhase5AdminMembersLiveRootFix){const sc=doc.createElement('script'); sc.textContent=adminPatchCode(); doc.body.appendChild(sc);}else if(typeof w.linkoMembersLiveRefresh==='function')w.linkoMembersLiveRefresh();}catch(e){}
   }
   /* MEDINA V68: إدارة الأعضاء أصبحت مباشرة داخل iframe؛ لا حقن خارجي. */
@@ -9030,7 +9030,7 @@ if(form) form.reset();
   }.toString()+')();'; }
   function patchAdmin(){
     const fr=document.getElementById('linkoAdminFrame');
-    if(!fr||!fr.contentDocument||!fr.contentDocument.body)return;
+    if(!fr||!fr.__linkoAdminLoaded||!fr.contentDocument||!fr.contentDocument.body)return;
     try{const w=fr.contentWindow,doc=fr.contentDocument; if(!w.__linkoAdminWalletReportsFinalFix){const sc=doc.createElement('script'); sc.textContent=adminPatchCode(); doc.body.appendChild(sc);}}
     catch(e){}
   }
@@ -9237,7 +9237,7 @@ if(form) form.reset();
 
   function patchAdminFrame(){
     const frame = document.getElementById('linkoAdminFrame');
-    if(!frame || !frame.contentDocument || !frame.contentWindow) return;
+    if(!frame || !frame.__linkoAdminLoaded || !frame.contentDocument || !frame.contentWindow) return;
     try{
       const w = frame.contentWindow, doc = frame.contentDocument;
       if(!doc.body) return;
@@ -9395,7 +9395,7 @@ if(form) form.reset();
   }.toString().replace('__CFG__', JSON.stringify(FIREBASE_CONFIG)) + ')();';}
   function patchAdmin(){
     const fr=document.getElementById('linkoAdminFrame');
-    if(!fr || !fr.contentDocument || !fr.contentDocument.body) return;
+    if(!fr || !fr.__linkoAdminLoaded || !fr.contentDocument || !fr.contentDocument.body) return;
     try{
       const w=fr.contentWindow, doc=fr.contentDocument;
       if(!w.__linkoWalletCurrentValueNoPromptPatch){
@@ -9740,7 +9740,7 @@ if(form) form.reset();
 
   function patchAdminFrame(){
     const frame=document.getElementById('linkoAdminFrame');
-    if(!frame || !frame.contentDocument || !frame.contentWindow || !frame.contentDocument.body) return;
+    if(!frame || !frame.__linkoAdminLoaded || !frame.contentDocument || !frame.contentWindow || !frame.contentDocument.body) return;
     try{
       const w=frame.contentWindow;
       if(!w.__linkoWalletCurrentFieldOnlyInstalled){
@@ -10253,7 +10253,7 @@ if(form) form.reset();
 
   function patchAdminFrame(){
     const frame = document.getElementById('linkoAdminFrame');
-    if(!frame || !frame.contentDocument || !frame.contentWindow) return;
+    if(!frame || !frame.__linkoAdminLoaded || !frame.contentDocument || !frame.contentWindow) return;
     try{
       const w = frame.contentWindow, doc = frame.contentDocument;
       if(!doc.body) return;
@@ -10889,7 +10889,7 @@ if(form) form.reset();
   }
   function patchAdminFrame(){
     const frame=document.getElementById('linkoAdminFrame');
-    if(!frame||!frame.contentDocument||!frame.contentWindow) return;
+    if(!frame||!frame.__linkoAdminLoaded||!frame.contentDocument||!frame.contentWindow) return;
     try{
       const doc=frame.contentDocument, win=frame.contentWindow;
       if(!doc.body) return;
@@ -11239,7 +11239,7 @@ if(form) form.reset();
 
   function patchFrame(){
     const frame = document.getElementById('linkoAdminFrame');
-    if(!frame || !frame.contentDocument || !frame.contentWindow) return false;
+    if(!frame || !frame.__linkoAdminLoaded || !frame.contentDocument || !frame.contentWindow) return false;
     try{
       const doc = frame.contentDocument;
       const win = frame.contentWindow;
@@ -11690,7 +11690,7 @@ body:not(.linko-dark) .info-box{
 
   function patchFrame(){
     const frame = document.getElementById('linkoAdminFrame');
-    if(!frame || !frame.contentDocument || !frame.contentWindow || !frame.contentDocument.body) return false;
+    if(!frame || !frame.__linkoAdminLoaded || !frame.contentDocument || !frame.contentWindow || !frame.contentDocument.body) return false;
     try{
       const win = frame.contentWindow;
       if(typeof win.linkoStage73ChargeOrder !== 'function' || typeof win.notifications !== 'function') return false;
@@ -11862,7 +11862,7 @@ body:not(.linko-dark) .info-box{
       window.__linkoRunSecurityPreparation=prepare;
     }.toString().replace('__CFG__',JSON.stringify(CFG))+')();';
   }
-  function patchAdmin(){const frame=document.getElementById('linkoAdminFrame');if(!frame||!frame.contentDocument||!frame.contentWindow||!frame.contentDocument.body)return false;try{if(frame.contentWindow.__linkoPhase93A4BAdminPreparation)return true;const s=frame.contentDocument.createElement('script');s.id='linkoPhase93A4BAdminPreparationScript';s.textContent=adminSource();frame.contentDocument.body.appendChild(s);return true}catch(e){return false}}
+  function patchAdmin(){const frame=document.getElementById('linkoAdminFrame');if(!frame||!frame.__linkoAdminLoaded||!frame.contentDocument||!frame.contentWindow||!frame.contentDocument.body)return false;try{if(frame.contentWindow.__linkoPhase93A4BAdminPreparation)return true;const s=frame.contentDocument.createElement('script');s.id='linkoPhase93A4BAdminPreparationScript';s.textContent=adminSource();frame.contentDocument.body.appendChild(s);return true}catch(e){return false}}
   function retryAdmin(n){if(patchAdmin())return;if(n<30)setTimeout(()=>retryAdmin(n+1),250)}
   const frame=document.getElementById('linkoAdminFrame');if(frame)frame.addEventListener('load',()=>retryAdmin(0));document.addEventListener('DOMContentLoaded',()=>retryAdmin(0));window.addEventListener('load',()=>retryAdmin(0));retryAdmin(0);
 })();
@@ -13683,7 +13683,7 @@ document.addEventListener('DOMContentLoaded',function(){
 
   function inject(){
     const fr=document.getElementById('linkoAdminFrame');
-    if(!fr||!fr.contentDocument||!fr.contentDocument.body)return false;
+    if(!fr||!fr.__linkoAdminLoaded||!fr.contentDocument||!fr.contentDocument.body)return false;
     try{
       const w=fr.contentWindow,doc=fr.contentDocument;
       if(w.__linkoDriverAdminInside){
@@ -13786,6 +13786,7 @@ body.linko-dark .linko-driver-status-note{
 <!-- LINKO_RADICAL_READ_ARCHITECTURE_V1_20260821 -->
 <!-- LINKO_RADICAL_READ_ARCHITECTURE_V1B: orders lazy+limit10, order create zero-read batch, no exact counter listener, no public settings listener -->
 <!-- LINKO_RADICAL_READ_ARCHITECTURE_V1C: zero background member runtime, login fastpath, notifications max2 -->
+<!-- LINKO_RADICAL_READ_ARCHITECTURE_V2_20260821: admin iframe hard gate + no legacy member refresh + lazy notifications -->
 </body></html><style id="linkoSafePatchFinal">
 /* خانة التوصيل تحت بطاقة العضوية */
 #homeDeliveryStatusBox{
@@ -14296,7 +14297,7 @@ transform-origin:center center!important;
 
   function patchAdminFrame(){
     const frame = document.getElementById('linkoAdminFrame');
-    if(!frame || !frame.contentDocument || !frame.contentWindow) return;
+    if(!frame || !frame.__linkoAdminLoaded || !frame.contentDocument || !frame.contentWindow) return;
     try{
       const w = frame.contentWindow, doc = frame.contentDocument;
       if(!doc.body) return;
@@ -14577,7 +14578,7 @@ transform-origin:center center!important;
   function patchAdminFrame(){
     extendFinalAPI();
     const frame = document.getElementById('linkoAdminFrame');
-    if(!frame || !frame.contentDocument || !frame.contentWindow) return;
+    if(!frame || !frame.__linkoAdminLoaded || !frame.contentDocument || !frame.contentWindow) return;
     try{
       const doc = frame.contentDocument;
       const win = frame.contentWindow;
@@ -15015,7 +15016,7 @@ transform-origin:center center!important;
 
   function patchAdminFrame(){
     const frame = document.getElementById('linkoAdminFrame');
-    if(!frame || !frame.contentDocument || !frame.contentWindow) return;
+    if(!frame || !frame.__linkoAdminLoaded || !frame.contentDocument || !frame.contentWindow) return;
     try{
       const doc = frame.contentDocument, win = frame.contentWindow;
       if(!doc.body) return;
@@ -15291,7 +15292,7 @@ transform-origin:center center!important;
   function patchAdminFrame(){
     extendBranchAPI();
     const frame = document.getElementById('linkoAdminFrame');
-    if(!frame || !frame.contentDocument || !frame.contentWindow) return;
+    if(!frame || !frame.__linkoAdminLoaded || !frame.contentDocument || !frame.contentWindow) return;
     try{
       const doc = frame.contentDocument;
       const win = frame.contentWindow;
@@ -15491,7 +15492,7 @@ transform-origin:center center!important;
 
   function patchFrame(){
     const frame = document.getElementById('linkoAdminFrame');
-    if(!frame || !frame.contentDocument || !frame.contentWindow) return;
+    if(!frame || !frame.__linkoAdminLoaded || !frame.contentDocument || !frame.contentWindow) return;
     try{
       const doc = frame.contentDocument;
       const win = frame.contentWindow;
@@ -15905,7 +15906,7 @@ transform-origin:center center!important;
 
   function patchFrame(){
     const frame = document.getElementById('linkoAdminFrame');
-    if(!frame || !frame.contentDocument || !frame.contentWindow) return false;
+    if(!frame || !frame.__linkoAdminLoaded || !frame.contentDocument || !frame.contentWindow) return false;
     try{
       const doc = frame.contentDocument;
       const win = frame.contentWindow;
@@ -16414,7 +16415,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
 
   function patchFrame(){
     const frame=document.getElementById('linkoAdminFrame');
-    if(!frame || !frame.contentDocument || !frame.contentWindow || !frame.contentDocument.body) return false;
+    if(!frame || !frame.__linkoAdminLoaded || !frame.contentDocument || !frame.contentWindow || !frame.contentDocument.body) return false;
     try{
       const win=frame.contentWindow;
       if(!win.__linkoStage75ReportsOnlyFrame) return false;
@@ -16784,7 +16785,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
 
   function patchFrame(){
     const frame=document.getElementById('linkoAdminFrame');
-    if(!frame||!frame.contentWindow||!frame.contentDocument||!frame.contentDocument.body)return false;
+    if(!frame||!frame.__linkoAdminLoaded||!frame.contentWindow||!frame.contentDocument||!frame.contentDocument.body)return false;
     try{
       const win=frame.contentWindow;
       if(!win.__linkoStage76OperationLogFrame)return false;
@@ -17082,7 +17083,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
 
   function patchAdminFrame(){
     const frame=document.getElementById('linkoAdminFrame');
-    if(!frame||!frame.contentWindow||!frame.contentDocument)return false;
+    if(!frame||!frame.__linkoAdminLoaded||!frame.contentWindow||!frame.contentDocument)return false;
     try{
       const w=frame.contentWindow,d=frame.contentDocument;
       if(!d.body)return false;
@@ -17494,7 +17495,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
   }
   function patch(){
     const frame=document.getElementById('linkoAdminFrame');
-    if(!frame||!frame.contentWindow||!frame.contentDocument||!frame.contentDocument.body) return;
+    if(!frame||!frame.__linkoAdminLoaded||!frame.contentWindow||!frame.contentDocument||!frame.contentDocument.body) return;
     try{
       const win=frame.contentWindow,doc=frame.contentDocument;
       if(typeof win.dashboard==='function'&&!win.dashboard.__linkoRealCountsLight){
@@ -17678,13 +17679,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
       const user=memberFromDoc(selected);
       saveMember(user);
       syncMember(f,user.firebaseId);
-      try{
-        if(typeof window.__linkoResumeMemberNotifications==='function'){
-          await window.__linkoResumeMemberNotifications(user.firebaseId,clean(user.authUid));
-        }
-      }catch(notificationError){
-        console.warn('LINKO member notifications restart skipped',notificationError);
-      }
+      // RADICAL V2: notifications are fetched only when the notifications page is opened.
       try{if(typeof fillUser==='function')fillUser();}catch(e){}
       try{if(typeof go==='function')go('homePage');}catch(e){}
       try{if(typeof window.linkoRefreshMember==='function')window.linkoRefreshMember();}catch(e){}
@@ -17701,16 +17696,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
     }
   };
 
-  Promise.resolve().then(async function(){
-    try{
-      let user=null;
-      try{user=window.currentUser||JSON.parse(localStorage.getItem('linko_current_member')||localStorage.getItem('lm_current_user')||'null');}catch(e){}
-      const id=clean(user&&(user.firebaseId||user.memberId||user.docId||user.id));
-      if(id&&typeof window.__linkoResumeMemberNotifications==='function'){
-        await window.__linkoResumeMemberNotifications(id,clean(user.authUid));
-      }
-    }catch(e){console.warn('LINKO saved member notifications resume skipped',e);}
-  });
+  // RADICAL V2: no saved-session notification listener at startup.
 
   const previousLogout=window.logout;
   window.logout=function(){
@@ -18159,7 +18145,7 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
 
   function patchFrame(){
     const frame = document.getElementById('linkoAdminFrame');
-    if(!frame || !frame.contentDocument || !frame.contentWindow) return false;
+    if(!frame || !frame.__linkoAdminLoaded || !frame.contentDocument || !frame.contentWindow) return false;
     try{
       const doc = frame.contentDocument, win = frame.contentWindow;
       if(!doc.body || !win.__linkoStage75ReportsOnlyFrame || typeof win.reports !== 'function') return false;
@@ -19217,7 +19203,7 @@ body.linko-dark .linko-rating-card textarea{background:#111827;color:#fff;border
   function injectAdminPriceEditor(){
     extendProductAPI();
     const fr=document.getElementById('linkoAdminFrame');
-    if(!fr||!fr.contentDocument||!fr.contentDocument.body)return false;
+    if(!fr||!fr.__linkoAdminLoaded||!fr.contentDocument||!fr.contentDocument.body)return false;
     try{
       const w=fr.contentWindow,doc=fr.contentDocument;
       if(!w.__linkoPriceAdminFrame){
