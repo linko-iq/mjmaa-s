@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- LINKO RADICAL FINAL: ZERO BACKGROUND MEMBER READS 20260821 -->
 <!-- LINKO_RADICAL_READ_AUDIT_CLEAN_PHASE2_20260821: ROOT READS REMOVED, LAZY MEMBER DATA -->
 
 <!-- LINKO FOUNDATION PHASE 2D: SHARED NOTIFICATIONS + CHANGE REQUEST LISTENERS 20260820 -->
@@ -8322,84 +8323,54 @@ if(form) form.reset();
   if(window.__linkoCatalogControlHub) return;
   const channels = new Map();
   const AGGREGATES = {productControls:'__linko_catalog_v1__',branchControls:'__linko_branches_v1__'};
-
-  function clean(v){ return String(v==null?'':v).trim(); }
-  function recordId(name,docId,data){
-    data=data||{};
-    return clean(name==='productControls' ? (data.productId||decodeURIComponent(docId||'')) : (data.branchId||decodeURIComponent(docId||'')));
+  function clean(v){return String(v==null?'':v).trim();}
+  function mapKey(id){return 'k_'+Array.from(String(id||'')).map(function(ch){return /[A-Za-z0-9_-]/.test(ch)?ch:('_'+ch.codePointAt(0).toString(16)+'_');}).join('');}
+  function fakeDoc(name,id,data){return {id:encodeURIComponent(id),data:function(){return Object.assign({},data,name==='productControls'?{productId:id}:{branchId:id});}};}
+  function makeSynthetic(name,controls){
+    controls=controls||{};
+    const docs=[];
+    Object.keys(controls).forEach(function(k){const d=controls[k]||{},id=clean(name==='productControls'?d.productId:d.branchId);if(id)docs.push(fakeDoc(name,id,d));});
+    return {docs:docs,size:docs.length,empty:docs.length===0,forEach:function(fn){docs.forEach(fn);},docChanges:function(){return docs.map(function(doc){return {type:'added',doc:doc};});}};
   }
-  function mapKey(id){
-    return 'k_'+Array.from(String(id||'')).map(function(ch){
-      return /[A-Za-z0-9_-]/.test(ch)?ch:('_'+ch.codePointAt(0).toString(16)+'_');
-    }).join('');
-  }
-  function fakeDoc(name,id,data){
-    return {id:encodeURIComponent(id),data:function(){return Object.assign({},data,name==='productControls'?{productId:id}:{branchId:id});}};
-  }
-  function makeSynthetic(name,controls,previous){
-    controls=controls||{};previous=previous||{};
-    const currentById=new Map(),previousById=new Map();
-    Object.keys(controls).forEach(function(k){const d=controls[k]||{},id=clean(name==='productControls'?d.productId:d.branchId);if(id)currentById.set(id,fakeDoc(name,id,d));});
-    Object.keys(previous).forEach(function(k){const d=previous[k]||{},id=clean(name==='productControls'?d.productId:d.branchId);if(id)previousById.set(id,fakeDoc(name,id,d));});
-    const docs=Array.from(currentById.values()),changes=[];
-    currentById.forEach(function(doc,id){
-      const before=previousById.get(id);
-      if(!before) changes.push({type:'added',doc:doc});
-      else{
-        let a='',b='';try{a=JSON.stringify(before.data())}catch(e){}try{b=JSON.stringify(doc.data())}catch(e){}
-        if(a!==b)changes.push({type:'modified',doc:doc});
-      }
-    });
-    previousById.forEach(function(doc,id){if(!currentById.has(id))changes.push({type:'removed',doc:doc});});
-    return {docs:docs,size:docs.length,empty:docs.length===0,forEach:function(fn){docs.forEach(fn);},docChanges:function(){return changes.slice();}};
-  }
-  async function ensureAggregate(firebaseRef,name){
-    const fs=firebaseRef.fs,db=firebaseRef.db,docId=AGGREGATES[name];
-    if(!docId)return null;
-    const ref=fs.doc(db,name,docId);
-    let snap=await fs.getDoc(ref);
-    if(snap.exists())return {ref:ref,data:snap.data()||{}};
-    // One-time compatibility migration: preserve every old per-item override; do not delete legacy docs.
-    const legacy=await fs.getDocs(fs.collection(db,name));
-    const controls={};
-    legacy.forEach(function(docSnap){
-      if(docSnap.id===docId || docSnap.id.indexOf('__linko_')===0)return;
-      const data=docSnap.data()||{},id=recordId(name,docSnap.id,data);
-      if(!id)return;
-      controls[mapKey(id)]=Object.assign({},data,name==='productControls'?{productId:id}:{branchId:id});
-    });
-    await fs.setDoc(ref,{schemaVersion:1,controls:controls,migratedAt:fs.serverTimestamp(),updatedAt:fs.serverTimestamp()},{merge:true});
-    snap=await fs.getDoc(ref);
-    return {ref:ref,data:snap.exists()?(snap.data()||{}):{controls:controls}};
-  }
-  function subscribeAggregate(firebaseRef,name,onNext,onError){
+  async function loadAggregate(firebaseRef,name){
     let channel=channels.get(name);
-    if(!channel){channel={subs:new Set(),last:null,unsub:null,controls:{},migrating:false};channels.set(name,channel);}
-    const sub={next:onNext,error:typeof onError==='function'?onError:null};channel.subs.add(sub);
-    if(channel.last){Promise.resolve().then(function(){if(channel.subs.has(sub))try{sub.next(channel.last)}catch(e){}});}
-    if(!channel.unsub){
-      const fs=firebaseRef.fs,ref=fs.doc(firebaseRef.db,name,AGGREGATES[name]);
-      channel.unsub=fs.onSnapshot(ref,function(docSnap){
-        // RADICAL READ GUARANTEE: public/member browsing never falls back to a full legacy collection scan.
-        // If an aggregate is ever missing, render the static catalog defaults and let an explicit admin write/migration repair it.
-        const next=(docSnap.exists()?(docSnap.data()||{}):{}).controls||{};
-        const synthetic=makeSynthetic(name,next,channel.controls);
-        channel.controls=Object.assign({},next);channel.last=synthetic;
-        channel.subs.forEach(function(item){try{item.next(synthetic)}catch(e){console.warn('LINKO aggregate subscriber failed',name,e)}});
-      },function(error){channel.subs.forEach(function(item){try{if(item.error)item.error(error)}catch(e){}});});
-    }
-    return function(){channel.subs.delete(sub);if(channel.subs.size===0&&channel.unsub){try{channel.unsub()}catch(e){}channel.unsub=null;channel.last=null;channel.controls={};}};
+    if(!channel){channel={loaded:false,loading:null,last:null};channels.set(name,channel);}
+    if(channel.loaded)return channel.last;
+    if(channel.loading)return channel.loading;
+    const fs=firebaseRef.fs,db=firebaseRef.db,docId=AGGREGATES[name];
+    channel.loading=(async function(){
+      const ref=fs.doc(db,name,docId);
+      const snap=await fs.getDoc(ref); // exactly one document read
+      const controls=snap.exists()?((snap.data()||{}).controls||{}):{};
+      channel.last=makeSynthetic(name,controls);
+      channel.loaded=true;
+      return channel.last;
+    })().finally(function(){channel.loading=null;});
+    return channel.loading;
   }
   function subscribe(firebaseRef,collectionName,onNext,onError){
     const name=clean(collectionName);
     if(!firebaseRef||!firebaseRef.fs||!firebaseRef.db||!name||typeof onNext!=='function')return function(){};
-    if(AGGREGATES[name])return subscribeAggregate(firebaseRef,name,onNext,onError);
-    let channel=channels.get(name);
-    if(!channel){channel={subs:new Set(),last:null,unsub:null};channels.set(name,channel);}
-    const sub={next:onNext,error:typeof onError==='function'?onError:null};channel.subs.add(sub);
-    if(!channel.unsub){channel.unsub=firebaseRef.fs.onSnapshot(firebaseRef.fs.collection(firebaseRef.db,name),function(snapshot){channel.last=snapshot;channel.subs.forEach(function(item){try{item.next(snapshot)}catch(error){console.warn('LINKO shared subscriber failed',name,error)}});},function(error){channel.subs.forEach(function(item){try{if(item.error)item.error(error)}catch(e){}});});}
-    else if(channel.last){Promise.resolve().then(function(){if(channel.subs.has(sub))try{sub.next(channel.last)}catch(e){}});}
-    return function(){channel.subs.delete(sub);if(channel.subs.size===0&&channel.unsub){try{channel.unsub()}catch(e){}channel.unsub=null;channel.last=null;}};
+    if(!AGGREGATES[name]){
+      // Final read guard: never allow an accidental whole-collection listener through the shared hub.
+      const err=new Error('LINKO_FULL_COLLECTION_READ_DISABLED:'+name);
+      if(typeof onError==='function')Promise.resolve().then(function(){onError(err);});
+      else console.warn(err.message);
+      return function(){};
+    }
+    let alive=true;
+    loadAggregate(firebaseRef,name).then(function(snapshot){if(alive)onNext(snapshot);}).catch(function(error){if(alive&&typeof onError==='function')onError(error);});
+    return function(){alive=false;};
+  }
+  async function ensureAggregate(firebaseRef,name){
+    const fs=firebaseRef.fs,db=firebaseRef.db,docId=AGGREGATES[name];
+    if(!docId)throw new Error('INVALID_AGGREGATE');
+    const ref=fs.doc(db,name,docId);
+    const snap=await fs.getDoc(ref);
+    if(snap.exists())return {ref:ref,data:snap.data()||{}};
+    // Never scan legacy per-item documents. Create the aggregate empty and let explicit admin edits populate it.
+    await fs.setDoc(ref,{schemaVersion:1,controls:{},createdAt:fs.serverTimestamp(),updatedAt:fs.serverTimestamp()},{merge:true});
+    return {ref:ref,data:{controls:{}}};
   }
   async function writeControl(firebaseRef,collectionName,id,patch){
     const name=clean(collectionName),itemId=clean(id);if(!AGGREGATES[name]||!itemId)throw new Error('INVALID_CONTROL_WRITE');
@@ -8410,37 +8381,32 @@ if(form) form.reset();
       controls[key]=Object.assign({},before,recordBase,patch||{},{updatedAt:fs.serverTimestamp()});
       tx.set(ref,{schemaVersion:1,controls:controls,updatedAt:fs.serverTimestamp()},{merge:true});
     });
-    // Backward-compatible mirror: lets the previous stable site version continue to see new admin edits.
-    try{await fs.setDoc(fs.doc(db,name,encodeURIComponent(itemId)),Object.assign({},recordBase,patch||{},{updatedAt:fs.serverTimestamp()}),{merge:true});}catch(e){console.warn('LINKO legacy control mirror skipped',name,itemId,e);}
+    try{await fs.setDoc(fs.doc(db,name,encodeURIComponent(itemId)),Object.assign({},recordBase,patch||{},{updatedAt:fs.serverTimestamp()}),{merge:true});}catch(e){}
+    const channel=channels.get(name);if(channel){channel.loaded=false;channel.last=null;}
   }
-  function stats(){const result={};channels.forEach(function(channel,name){result[name]={subscribers:channel.subs.size,active:!!channel.unsub,mode:AGGREGATES[name]?'aggregate':'collection'};});return result;}
+  function stats(){const result={};channels.forEach(function(channel,name){result[name]={loaded:!!channel.loaded,mode:'one-shot-aggregate'};});return result;}
   window.__linkoCatalogControlHub={subscribe:subscribe,writeControl:writeControl,stats:stats,aggregateIds:Object.assign({},AGGREGATES)};
 })();
 </script><!-- ===== LINKO FOUNDATION PHASE 2F REBUILT: MEMBER-SCOPED FIRESTORE READS ===== --><script id="linkoFoundationPhase2FMemberScopedHub">
 (function(){
   'use strict';
   if(window.__linkoScopedRealtimeHub) return;
-  const channels=new Map();
   function safe(v){return String(v==null?'':v).trim();}
-  function identity(u){u=u||{};return {id:safe(u.firebaseId||u.memberId||u.docId||u.id),name:safe(u.name||u.username||u.fullName),branch:safe(u.branchId||u.branch||u.branchName)};}
-  function sig(doc){try{return JSON.stringify(doc.data()||{},function(k,v){if(v&&typeof v.toMillis==='function')return v.toMillis();if(v&&typeof v.seconds==='number'&&typeof v.nanoseconds==='number')return [v.seconds,v.nanoseconds];return v;});}catch(e){return '';}}
-  function synthetic(map,previous){const docs=Array.from(map.values()),changes=[];map.forEach(function(doc,id){if(!previous.has(id))changes.push({type:'added',doc:doc});else if(sig(previous.get(id))!==sig(doc))changes.push({type:'modified',doc:doc});});previous.forEach(function(doc,id){if(!map.has(id))changes.push({type:'removed',doc:doc});});return {docs:docs,size:docs.length,empty:docs.length===0,forEach:function(fn){docs.forEach(fn);},docChanges:function(){return changes.slice();}};}
-  function subscribeMulti(f,key,refs,onNext,onError){
-    if(!f||!f.fs||!Array.isArray(refs)||!refs.length||typeof onNext!=='function')return function(){};
-    let ch=channels.get(key);
-    if(!ch){ch={subs:new Set(),sources:refs.map(function(ref){return {ref:ref,ready:false,map:new Map(),unsub:null};}),lastMap:new Map(),started:false};channels.set(key,ch);}
-    const sub={next:onNext,error:typeof onError==='function'?onError:null};ch.subs.add(sub);
-    function emit(){if(ch.sources.some(function(x){return !x.ready;}))return;const merged=new Map();ch.sources.forEach(function(x){x.map.forEach(function(doc,id){merged.set(id,doc);});});const snap=synthetic(merged,ch.lastMap);ch.lastMap=new Map(merged);ch.subs.forEach(function(x){try{x.next(snap);}catch(e){console.warn('LINKO scoped notification subscriber failed',key,e);}});}
-    if(!ch.started){ch.started=true;ch.sources.forEach(function(source){source.unsub=f.fs.onSnapshot(source.ref,function(snap){source.map=new Map();snap.forEach(function(doc){source.map.set(doc.id,doc);});source.ready=true;emit();},function(err){source.ready=true;source.map=new Map();ch.subs.forEach(function(x){try{if(x.error)x.error(err);}catch(e){}});emit();});});}
-    else if(ch.sources.every(function(x){return x.ready;})){Promise.resolve().then(function(){if(ch.subs.has(sub)){try{sub.next(synthetic(ch.lastMap,new Map(ch.lastMap)));}catch(e){}}});}
-    return function(){ch.subs.delete(sub);if(ch.subs.size===0){ch.sources.forEach(function(x){try{if(x.unsub)x.unsub();}catch(e){}});channels.delete(key);}};
-  }
+  function identity(u){u=u||{};return {id:safe(u.firebaseId||u.memberId||u.docId||u.id),name:safe(u.name||u.username||u.fullName)};}
+  function synthetic(map){const docs=Array.from(map.values());return {docs:docs,size:docs.length,empty:docs.length===0,forEach:function(fn){docs.forEach(fn);},docChanges:function(){return docs.map(function(doc){return {type:'added',doc:doc};});}};}
   function subscribeMemberNotifications(f,u,onNext,onError){
+    if(!f||!f.fs||typeof onNext!=='function')return function(){};
     const who=identity(u),fs=f.fs,col=fs.collection(f.db,'memberNotifications'),refs=[];
-    if(who.id) refs.push(fs.query(col,fs.where('targetValue','==',who.id),fs.limit(1)));
-    else if(who.name) refs.push(fs.query(col,fs.where('memberName','==',who.name),fs.limit(1)));
-    refs.push(fs.query(col,fs.where('targetType','==','all_members'),fs.limit(1)));
-    return subscribeMulti(f,'memberNotifications:v3:'+who.id+':'+who.name+':'+who.branch,refs,onNext,onError);
+    if(who.id) refs.push(fs.query(col,fs.where('targetValue','==',who.id),fs.orderBy(fs.documentId(),'desc'),fs.limit(3)));
+    else if(who.name) refs.push(fs.query(col,fs.where('memberName','==',who.name),fs.orderBy(fs.documentId(),'desc'),fs.limit(3)));
+    refs.push(fs.query(col,fs.where('targetType','==','all_members'),fs.orderBy(fs.documentId(),'desc'),fs.limit(2)));
+    let alive=true;
+    Promise.all(refs.map(function(ref){return fs.getDocs(ref);})).then(function(snaps){
+      if(!alive)return;
+      const map=new Map();snaps.forEach(function(snap){snap.forEach(function(doc){map.set(doc.id,doc);});});
+      onNext(synthetic(map));
+    }).catch(function(error){if(alive&&typeof onError==='function')onError(error);});
+    return function(){alive=false;};
   }
   window.__linkoScopedRealtimeHub={subscribeMemberNotifications:subscribeMemberNotifications};
 })();
@@ -9013,7 +8979,6 @@ if(form) form.reset();
     }).join('') : '<div class="empty-card">لا توجد طلبات بعد</div>';
   }
   async function startMemberOrdersListener(){
-    try{ if(memberOrdersUnsubscribe) memberOrdersUnsubscribe(); }catch(e){}
     memberOrdersUnsubscribe = null;
     const user = getCurrentUser();
     if(!user){ memberOrdersRows = []; renderMemberOrders(); return; }
@@ -9027,16 +8992,14 @@ if(form) form.reset();
         f.fs.orderBy(f.fs.documentId(),'desc'),
         f.fs.limit(6)
       );
-      memberOrdersUnsubscribe = f.fs.onSnapshot(queryRef,function(snapshot){
-        memberOrdersRows = snapshot.docs.map(function(docSnap){
-          return Object.assign({id:docSnap.id}, docSnap.data() || {});
-        }).sort(function(a,b){ return Number(b.clientCreatedAtMs||0)-Number(a.clientCreatedAtMs||0); });
-        renderMemberOrders();
-      }, function(error){ console.warn('LINKO member orders listener failed', error); });
-    }catch(error){ console.warn('LINKO member orders start failed', error); }
+      const snapshot = await f.fs.getDocs(queryRef);
+      memberOrdersRows = snapshot.docs.map(function(docSnap){
+        return Object.assign({id:docSnap.id}, docSnap.data() || {});
+      }).sort(function(a,b){ return Number(b.clientCreatedAtMs||0)-Number(a.clientCreatedAtMs||0); });
+      renderMemberOrders();
+    }catch(error){ console.warn('LINKO member orders one-shot read failed', error); }
   }
   function stopMemberOrdersListener(){
-    try{ if(memberOrdersUnsubscribe) memberOrdersUnsubscribe(); }catch(e){}
     memberOrdersUnsubscribe = null;
   }
   function clearCartAfterSuccess(){
@@ -10060,41 +10023,7 @@ body:not(.linko-dark) .info-box{
   bindCurrentFrame();
 })();
 
-</script><!-- LINKO PHASE 9.3A-3 MEMBER DATA UID LINKING + SELF VERIFY --><!-- LINKO PHASE 9.3A-4 + 9.3B PRODUCTION SECURITY BRIDGE --><script id="linkoPhase93A4BProductionSecurityBridge">
-(function(){
-  'use strict';
-  if(window.__linkoPhase93A4BProductionSecurityBridge) return;
-  window.__linkoPhase93A4BProductionSecurityBridge = true;
-  const CFG={apiKey:'AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA',authDomain:'medina-bazaar-e2c18.firebaseapp.com',projectId:'medina-bazaar-e2c18',storageBucket:'medina-bazaar-e2c18.firebasestorage.app',messagingSenderId:'375693456199',appId:'1:375693456199:web:2b36e0368ed898a7a11262'};
-  // READ AUDIT: obsolete member login/runtime from this older security bridge removed.
-  // The current keyed login path is linkoFinalExactMemberIdentityNoTouch later in the file.
-  function adminSource(){
-    return '('+function(){
-      'use strict';
-      if(window.__linkoPhase93A4BAdminPreparation) return;
-      window.__linkoPhase93A4BAdminPreparation=true;
-      const CFG=__CFG__,COL={admins:'admins',members:'members',keys:'memberLoginKeys',orders:'orders',changes:'memberChangeRequests',notifications:'memberNotifications'};
-      let fbPromise=null,preparing=false;
-      function clean(v){return String(v==null?'':v).trim()}
-      function normName(v){let s=clean(v);try{s=s.normalize('NFKC')}catch(e){}return s.replace(/\s+/g,' ').toLowerCase()}
-      function msg(v){try{if(typeof toast==='function')toast(v);else console.log(v)}catch(e){}}
-      function fallbackHash(text){const input=unescape(encodeURIComponent(String(text))),parts=[];for(let r=0;r<8;r++){let h=(2166136261^(r*2654435761))>>>0;for(let i=0;i<input.length;i++){h^=input.charCodeAt(i);h=Math.imul(h,16777619)>>>0}parts.push(h.toString(16).padStart(8,'0'))}return parts.join('')}
-      async function sha256(text){try{if(window.crypto&&crypto.subtle&&window.TextEncoder){const b=new TextEncoder().encode(String(text)),d=await crypto.subtle.digest('SHA-256',b);return Array.from(new Uint8Array(d),x=>x.toString(16).padStart(2,'0')).join('')}}catch(e){}return fallbackHash(text)}
-      async function parts(name,code){const key=await sha256('LINKO_MEMBER_LOGIN_V2|'+normName(name)+'|'+clean(code));return {key:key,email:'u.'+key.slice(0,48)+'@members.medina-bazaar-e2c18.web.app'}}
-      async function fb(){if(fbPromise)return fbPromise;fbPromise=Promise.all([import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js'),import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')]).then(function(m){const appMod=m[0],authMod=m[1],fs=m[2],app=appMod.getApps().length?appMod.getApps()[0]:appMod.initializeApp(CFG);return {auth:authMod.getAuth(app),db:fs.getFirestore(app),fs:fs}});return fbPromise}
-      function active(d){d=d||{};const s=clean(d.status).toLowerCase();return !d.deleted&&!['deleted','removed','stopped','inactive','blocked','موقوف','محذوف'].includes(s)}
-      async function commit(f,items){for(let i=0;i<items.length;i+=350){const b=f.fs.writeBatch(f.db);items.slice(i,i+350).forEach(x=>b.set(x.ref,x.data,{merge:true}));await b.commit()}}
-      async function prepare(){if(preparing)return;preparing=true;try{const f=await fb(),user=f.auth.currentUser;if(!user||!user.uid)return;if(clean(user.email).endsWith('@members.medina-bazaar-e2c18.web.app'))return;await f.fs.setDoc(f.fs.doc(f.db,COL.admins,user.uid),{role:'admin',active:true,email:clean(user.email),updatedAt:f.fs.serverTimestamp(),createdAt:f.fs.serverTimestamp()},{merge:true});const snap=await f.fs.getDocs(f.fs.collection(f.db,COL.members)),rows=[];snap.forEach(function(doc){const d=doc.data()||{};if(active(d))rows.push({id:doc.id,data:d})});const prepared=[];for(const row of rows){const name=clean(row.data.name||row.data.fullName||row.data.username),code=clean(row.data.code||row.data.password||row.data.pin);if(!name||!code)continue;const p=await parts(name,code);prepared.push({row:row,p:p})}const groups=new Map();prepared.forEach(x=>{if(!groups.has(x.p.key))groups.set(x.p.key,[]);groups.get(x.p.key).push(x)});const writes=[];let conflicts=0;for(const group of groups.values()){if(group.length!==1){conflicts+=group.length;continue}const x=group[0];writes.push({ref:f.fs.doc(f.db,COL.keys,x.p.key),data:{memberId:x.row.id,authEmail:x.p.email,active:true,version:2,preparedAt:f.fs.serverTimestamp(),updatedAt:f.fs.serverTimestamp()}});writes.push({ref:f.fs.doc(f.db,COL.members,x.row.id),data:{authLoginKey:x.p.key,authEmail:x.p.email,authIdentityTargetVersion:2,authPreparedAt:f.fs.serverTimestamp()}})}await commit(f,writes);const uidSeen=new Set();let duplicateUid=0;rows.forEach(x=>{const uid=clean(x.data.authUid);if(uid){if(uidSeen.has(uid))duplicateUid++;uidSeen.add(uid)}});const memberIds=new Set(rows.map(x=>x.id)),checks=await Promise.all([f.fs.getDocs(f.fs.collection(f.db,COL.orders)),f.fs.getDocs(f.fs.collection(f.db,COL.changes)),f.fs.getDocs(f.fs.collection(f.db,COL.notifications))]);let orphan=0;checks[0].forEach(d=>{const x=d.data()||{};if(clean(x.memberId)&&!memberIds.has(clean(x.memberId)))orphan++});checks[1].forEach(d=>{const x=d.data()||{};if(clean(x.memberId)&&!memberIds.has(clean(x.memberId)))orphan++});checks[2].forEach(d=>{const x=d.data()||{},type=clean(x.targetType||x.type);if(type==='member'){const id=clean(x.targetValue||x.memberId);if(id&&!memberIds.has(id))orphan++}});const blockingIssues=conflicts+duplicateUid,legacyNotes=orphan;localStorage.setItem('linko_security_admin_audit_v2',JSON.stringify({ready:blockingIssues===0,members:rows.length,prepared:writes.length/2,conflicts:conflicts,duplicateUid:duplicateUid,orphan:orphan,blockingIssues:blockingIssues,legacyNotes:legacyNotes,time:Date.now()}));if(blockingIssues>0){}else if(legacyNotes>0){}else{}}catch(e){console.error('LINKO admin security preparation failed',e);msg('تعذر إكمال فحص الحماية، أعد تسجيل الدخول للإدارة')}finally{preparing=false}}
-      // READ OPTIMIZATION: never scan all members/orders/notifications automatically on admin login.
-      // Legacy member identity is prepared lazily by a targeted lookup only when that member first logs in.
-      window.__linkoRunSecurityPreparation=prepare;
-    }.toString().replace('__CFG__',JSON.stringify(CFG))+')();';
-  }
-  function patchAdmin(){const frame=document.getElementById('linkoAdminFrame');if(!frame||!frame.__linkoAdminLoaded||!frame.contentDocument||!frame.contentWindow||!frame.contentDocument.body)return false;try{if(frame.contentWindow.__linkoPhase93A4BAdminPreparation)return true;const s=frame.contentDocument.createElement('script');s.id='linkoPhase93A4BAdminPreparationScript';s.textContent=adminSource();frame.contentDocument.body.appendChild(s);return true}catch(e){return false}}
-  function retryAdmin(n){if(patchAdmin())return;if(n<30)setTimeout(()=>retryAdmin(n+1),250)}
-  const frame=document.getElementById('linkoAdminFrame');if(frame)frame.addEventListener('load',()=>retryAdmin(0));document.addEventListener('DOMContentLoaded',()=>retryAdmin(0));window.addEventListener('load',()=>retryAdmin(0));retryAdmin(0);
-})();
-</script><!-- ===== LINKO URGENT FIX: MEMBER NOTIFICATION SCREEN POPUP ONLY ===== --><style id="linkoUrgentMemberNotificationPopupStyle">
+</script><!-- LINKO PHASE 9.3A-3 MEMBER DATA UID LINKING + SELF VERIFY --><!-- LINKO PHASE 9.3A-4 + 9.3B PRODUCTION SECURITY BRIDGE --><!-- LINKO READ AUDIT: obsolete full-collection security preparation removed --><!-- ===== LINKO URGENT FIX: MEMBER NOTIFICATION SCREEN POPUP ONLY ===== --><style id="linkoUrgentMemberNotificationPopupStyle">
 #linkoUrgentMemberNotificationPopup{
   position:fixed!important;z-index:2147483000!important;
   top:calc(env(safe-area-inset-top,0px) + 14px)!important;
