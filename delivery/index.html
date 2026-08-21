@@ -393,8 +393,6 @@ $("#registerForm").addEventListener("submit",async e=>{
     const cred=await ensureDriverAuth(fb,id,code,true),uid=clean(cred&&cred.user&&cred.user.uid);
     if(!uid)throw new Error("AUTH_UID_MISSING");
     await fb.fs.setDoc(reqRef,{requestId:id,name,phone,phoneDisplay:phoneDisplay(phone),area,vehicleType,vehicleNumber,codeHash:hash,authUid:uid,status:"pending",requestType:"driver_registration",clientCreatedAtMs:Date.now(),createdAt:fb.fs.serverTimestamp(),updatedAt:fb.fs.serverTimestamp()});
-    const verify=await fb.fs.getDoc(reqRef);
-    if(!verify.exists()||String(verify.data().status||"").toLowerCase()!=="pending")throw new Error("REQUEST_VERIFY_FAILED");
     $("#registerForm").reset();switchTab("register",false);setAuthNotice("wait","تم إرسال طلبك بنجاح. الطلب الآن قيد انتظار موافقة الإدارة.");
   }catch(err){
     console.error("DRIVER REGISTER ERROR",err);const c=String(err&&err.code||"");switchTab("register",false);
@@ -657,7 +655,7 @@ document.addEventListener("click",e=>{
 });
 restoreSession();
 </script>
-<!-- LINKO_DELIVERY_READ_OPTIMIZATION_PHASE1_20260821 -->
+<!-- LINKO_DELIVERY_RADICAL_READ_AUDIT_PHASE2_20260821: redundant verify read removed; realtime bounded to 3+3+driver -->
 <!-- LINKO_RADICAL_READ_ARCHITECTURE_V1: courier pending limit5, own limit8 -->
 </body>
 </html>
