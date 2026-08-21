@@ -555,26 +555,57 @@ async function startListeners(){
 async function acceptOrder(id){
   if(busy||!driver)return;busy=true;loading(true,"جاري تثبيت الطلب باسمك...");
   try{
-    const fb=await firebase(),user=await waitForAuth(fb);if(!user)throw new Error("AUTH_REQUIRED");if(clean(driver.authUid)&&clean(driver.authUid)!==clean(user.uid))throw new Error("AUTH_MISMATCH");
-    const ref=fb.fs.doc(fb.db,ORDERS,id),driverRef=fb.fs.doc(fb.db,DRIVERS,driver.id);let acceptedOrder=null;
-    await fb.fs.runTransaction(fb.db,async tx=>{const driverSnap=await tx.get(driverRef);if(!driverSnap.exists()||String(driverSnap.data().status||"").toLowerCase()!=="active")throw new Error("DRIVER_INACTIVE");const snap=await tx.get(ref);if(!snap.exists())throw new Error("ORDER_MISSING");const o=snap.data()||{},st=String(o.status||"").toLowerCase();acceptedOrder={id:snap.id,...o};if(clean(o.driverId)||!["pending","new","جديد"].includes(st))throw new Error("ORDER_TAKEN");const loc=o.customerLocation||{};if(!(loc.confirmed===true||Number.isFinite(Number(o.customerLocationLat))))throw new Error("NO_LOCATION");tx.set(ref,{status:"assigned",driverId:driver.id,driverName:clean(driver.name),driverPhone:clean(driver.phoneDisplay||driver.phone),driverAuthUid:clean(user.uid),acceptedAt:fb.fs.serverTimestamp(),updatedAt:fb.fs.serverTimestamp()},{merge:true})});
-    toast("تم قبول الطلب وتثبيته باسمك");if(acceptedOrder)pushMemberNotification(acceptedOrder,"تم تعيين مندوب لطلبك","تمت الموافقة على طلبك، قريباً سيكون المندوب عندك.","ok");
-  }catch(err){console.error("DRIVER ACCEPT ORDER ERROR",err);const m=String(err&&err.message||""),c=String(err&&err.code||"");toast(m==="ORDER_TAKEN"?"هذا الطلب استلمه مندوب آخر":m==="NO_LOCATION"?"هذا الطلب لا يحتوي موقع تسليم":m==="DRIVER_INACTIVE"?"حساب المندوب غير مفعل حالياً":m==="AUTH_REQUIRED"||m==="AUTH_MISMATCH"?"انتهت جلسة المندوب، سجل الدخول من جديد":c.includes("permission-denied")?"تعذر قبول الطلب بسبب صلاحيات الحساب":c.includes("unavailable")||c.includes("network")?"تعذر الاتصال بقاعدة البيانات، تحقق من الإنترنت":"تعذر قبول الطلب الآن")}
-  finally{busy=false;loading(false)}
+    const fb=await firebase(),ref=fb.fs.doc(fb.db,ORDERS,id);
+    let acceptedOrder=null;
+    await fb.fs.runTransaction(fb.db,async tx=>{
+      const snap=await tx.get(ref);
+      if(!snap.exists())throw new Error("ORDER_MISSING");
+      const o=snap.data()||{},s=String(o.status||"").toLowerCase();
+      acceptedOrder={id:snap.id,...o};
+      if(clean(o.driverId)||!["pending","new","جديد"].includes(s))throw new Error("ORDER_TAKEN");
+      const loc=o.customerLocation||{};
+      if(!(loc.confirmed===true||Number.isFinite(Number(o.customerLocationLat))))throw new Error("NO_LOCATION");
+      tx.update(ref,{
+        status:"assigned",
+        driverId:driver.id,
+        driverName:clean(driver.name),
+        driverPhone:clean(driver.phoneDisplay||driver.phone),
+        acceptedAt:fb.fs.serverTimestamp(),
+        updatedAt:fb.fs.serverTimestamp()
+      });
+    });
+    toast("تم قبول الطلب وتثبيته باسمك");
+    if(acceptedOrder){
+      pushMemberNotification(
+        acceptedOrder,
+        "تم تعيين مندوب لطلبك",
+        "تمت الموافقة على طلبك، قريباً سيكون المندوب عندك.",
+        "ok"
+      );
+    }
+  }catch(err){
+    console.error("DRIVER ACCEPT ORDER ERROR",err);
+    const m=String(err&&err.message||""),c=String(err&&err.code||"");
+    toast(m==="ORDER_TAKEN"?"هذا الطلب استلمه مندوب آخر":
+      m==="NO_LOCATION"?"هذا الطلب لا يحتوي موقع تسليم":
+      m==="ORDER_MISSING"?"الطلب لم يعد موجوداً":
+      c.includes("permission-denied")?"تعذر قبول الطلب بسبب صلاحيات Firebase":
+      c.includes("unavailable")||c.includes("network")?"تعذر الاتصال بقاعدة البيانات، تحقق من الإنترنت":
+      "تعذر قبول الطلب الآن");
+  }finally{busy=false;loading(false)}
 }
 
 async function setOrderStatus(id,status){
   if(busy||!driver)return;busy=true;loading(true,status==="delivered"?"جاري إنهاء الطلب...":"جاري تحديث حالة الطلب...");
   try{
-    const fb=await firebase(),user=await waitForAuth(fb),ref=fb.fs.doc(fb.db,ORDERS,id);
-    if(!user)throw new Error("AUTH_REQUIRED");if(clean(driver.authUid)&&clean(driver.authUid)!==clean(user.uid))throw new Error("AUTH_MISMATCH");
+    const fb=await firebase(),ref=fb.fs.doc(fb.db,ORDERS,id);
     let statusOrder=null;
     await fb.fs.runTransaction(fb.db,async tx=>{
       const snap=await tx.get(ref);if(!snap.exists())throw new Error("ORDER_MISSING");
       const o=snap.data()||{};
       statusOrder={id:snap.id,...o};
       if(clean(o.driverId)!==clean(driver.id))throw new Error("NOT_YOUR_ORDER");
-      const payload={status,driverAuthUid:clean(user.uid),updatedAt:fb.fs.serverTimestamp()};
+      const payload={status,updatedAt:fb.fs.serverTimestamp()};
       if(status==="picked_up")payload.pickedUpAt=fb.fs.serverTimestamp();
       if(status==="delivered")payload.deliveredAt=fb.fs.serverTimestamp();
       tx.update(ref,payload);
@@ -597,8 +628,14 @@ async function setOrderStatus(id,status){
         );
       }
     }
-  }catch(err){console.error("DRIVER STATUS UPDATE ERROR",err);const m=String(err&&err.message||""),c=String(err&&err.code||"");toast(m==="AUTH_REQUIRED"||m==="AUTH_MISMATCH"?"انتهت جلسة المندوب، سجل الدخول من جديد":c.includes("permission-denied")?"تعذر تحديث الطلب بسبب صلاحيات الحساب":"تعذر تحديث حالة الطلب")}
-  finally{busy=false;loading(false)}
+  }catch(err){
+    console.error("DRIVER STATUS UPDATE ERROR",err);
+    const m=String(err&&err.message||""),c=String(err&&err.code||"");
+    toast(m==="NOT_YOUR_ORDER"?"هذا الطلب ليس مثبتاً باسمك":
+      m==="ORDER_MISSING"?"الطلب لم يعد موجوداً":
+      c.includes("permission-denied")?"تعذر تحديث الطلب بسبب صلاحيات Firebase":
+      "تعذر تحديث حالة الطلب");
+  }finally{busy=false;loading(false)}
 }
 document.addEventListener("click",e=>{
   const a=e.target.closest("[data-accept-order]");if(a){acceptOrder(a.dataset.acceptOrder);return}
