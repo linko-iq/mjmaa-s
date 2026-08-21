@@ -9876,8 +9876,30 @@ if(form) form.reset();
   function synthetic(map,previous){const docs=Array.from(map.values()),changes=[];map.forEach(function(doc,id){if(!previous.has(id))changes.push({type:'added',doc:doc});else if(sig(previous.get(id))!==sig(doc))changes.push({type:'modified',doc:doc});});previous.forEach(function(doc,id){if(!map.has(id))changes.push({type:'removed',doc:doc});});return {docs:docs,size:docs.length,empty:docs.length===0,forEach:function(fn){docs.forEach(fn);},docChanges:function(){return changes.slice();}};}
   function subscribeQuery(f,key,queryRef,onNext,onError){if(!f||!f.fs||!queryRef||typeof onNext!=='function')return function(){};let ch=singleChannels.get(key);if(!ch){ch={subs:new Set(),last:null,unsub:null};singleChannels.set(key,ch);}const sub={next:onNext,error:typeof onError==='function'?onError:null};ch.subs.add(sub);if(!ch.unsub){ch.unsub=f.fs.onSnapshot(queryRef,function(snap){ch.last=snap;ch.subs.forEach(function(x){try{x.next(snap);}catch(e){console.warn('LINKO scoped subscriber failed',key,e);}});},function(err){ch.subs.forEach(function(x){try{if(x.error)x.error(err);}catch(e){}});});}else if(ch.last){Promise.resolve().then(function(){if(ch.subs.has(sub)){try{sub.next(ch.last);}catch(e){}}});}return function(){ch.subs.delete(sub);if(ch.subs.size===0&&ch.unsub){try{ch.unsub();}catch(e){}singleChannels.delete(key);}};}
   function subscribeMulti(f,key,refs,onNext,onError){if(!f||!f.fs||!Array.isArray(refs)||!refs.length||typeof onNext!=='function')return function(){};let ch=multiChannels.get(key);if(!ch){ch={subs:new Set(),sources:refs.map(function(ref){return {ref:ref,ready:false,map:new Map(),unsub:null};}),lastMap:new Map(),started:false};multiChannels.set(key,ch);}const sub={next:onNext,error:typeof onError==='function'?onError:null};ch.subs.add(sub);function emit(){if(ch.sources.some(function(x){return !x.ready;}))return;const merged=new Map();ch.sources.forEach(function(x){x.map.forEach(function(doc,id){merged.set(id,doc);});});const snap=synthetic(merged,ch.lastMap);ch.lastMap=new Map(merged);ch.subs.forEach(function(x){try{x.next(snap);}catch(e){console.warn('LINKO scoped multi subscriber failed',key,e);}});}if(!ch.started){ch.started=true;ch.sources.forEach(function(source){source.unsub=f.fs.onSnapshot(source.ref,function(snap){source.map=new Map();snap.forEach(function(doc){source.map.set(doc.id,doc);});source.ready=true;emit();},function(err){source.ready=true;source.map=new Map();ch.subs.forEach(function(x){try{if(x.error)x.error(err);}catch(e){}});emit();});});}else if(ch.sources.every(function(x){return x.ready;})){Promise.resolve().then(function(){if(ch.subs.has(sub)){try{sub.next(synthetic(ch.lastMap,new Map(ch.lastMap)));}catch(e){}}});}return function(){ch.subs.delete(sub);if(ch.subs.size===0){ch.sources.forEach(function(x){try{if(x.unsub)x.unsub();}catch(e){}});multiChannels.delete(key);}};}
-  function subscribeMemberRequests(f,u,onNext,onError){const who=identity(u),fs=f.fs,col=fs.collection(f.db,'memberChangeRequests'),refs=[];if(who.id)refs.push(fs.query(col,fs.where('memberId','==',who.id),fs.limit(30)));if(who.name)refs.push(fs.query(col,fs.where('memberName','==',who.name),fs.limit(30)));if(!refs.length)return function(){};return subscribeMulti(f,'memberRequests:'+who.id+':'+who.name,refs,onNext,onError);}
-  function subscribeMemberNotifications(f,u,onNext,onError){const who=identity(u),fs=f.fs,col=fs.collection(f.db,'memberNotifications'),refs=[];if(who.id){refs.push(fs.query(col,fs.where('targetValue','==',who.id),fs.limit(20)));refs.push(fs.query(col,fs.where('memberId','==',who.id),fs.limit(20)));}else if(who.name){refs.push(fs.query(col,fs.where('memberName','==',who.name),fs.limit(15)));}refs.push(fs.query(col,fs.where('targetType','==','all_members'),fs.limit(10)));refs.push(fs.query(col,fs.where('targetType','==','all_branches'),fs.limit(10)));if(who.branch)refs.push(fs.query(col,fs.where('targetValue','==',who.branch),fs.limit(10)));return subscribeMulti(f,'memberNotifications:'+who.id+':'+who.name+':'+who.branch,refs,onNext,onError);}
+  function subscribeMemberRequests(f,u,onNext,onError){
+    const who=identity(u),fs=f.fs,col=fs.collection(f.db,'memberChangeRequests'),refs=[];
+    // READ OPTIMIZATION PHASE 2: authenticated members have a stable document id, so do not
+    // open the legacy name query in parallel. Keep the name path only as a fallback for old sessions.
+    if(who.id) refs.push(fs.query(col,fs.where('memberId','==',who.id),fs.limit(8)));
+    else if(who.name) refs.push(fs.query(col,fs.where('memberName','==',who.name),fs.limit(8)));
+    if(!refs.length)return function(){};
+    return subscribeMulti(f,'memberRequests:v2:'+who.id+':'+who.name,refs,onNext,onError);
+  }
+  function subscribeMemberNotifications(f,u,onNext,onError){
+    const who=identity(u),fs=f.fs,col=fs.collection(f.db,'memberNotifications'),refs=[];
+    // Current writers always target the member id. Keep a tiny memberId fallback for older courier/admin rows.
+    if(who.id){
+      refs.push(fs.query(col,fs.where('targetValue','==',who.id),fs.limit(8)));
+      refs.push(fs.query(col,fs.where('memberId','==',who.id),fs.limit(4)));
+    }else if(who.name){
+      refs.push(fs.query(col,fs.where('memberName','==',who.name),fs.limit(6)));
+    }
+    // Broadcast history is intentionally short; notifications are operational, not an archive.
+    refs.push(fs.query(col,fs.where('targetType','==','all_members'),fs.limit(4)));
+    refs.push(fs.query(col,fs.where('targetType','==','all_branches'),fs.limit(2)));
+    if(who.branch)refs.push(fs.query(col,fs.where('targetValue','==',who.branch),fs.limit(4)));
+    return subscribeMulti(f,'memberNotifications:v2:'+who.id+':'+who.name+':'+who.branch,refs,onNext,onError);
+  }
   window.__linkoScopedRealtimeHub={subscribeMemberRequests:subscribeMemberRequests,subscribeMemberNotifications:subscribeMemberNotifications};
 })();
 </script><!-- ===== LINKO FIRESTORE READ OPTIMIZATION: MEMBER/ORDER SHARED HUB ===== --><script id="linkoFirestoreReadOptimizationHub">
@@ -13781,6 +13803,8 @@ body.linko-dark .linko-driver-status-note{
 
 
 <!-- LINKO_FIRESTORE_READ_OPTIMIZATION_PHASE1_20260821 -->
+<!-- LINKO_FIRESTORE_READ_OPTIMIZATION_PHASE2_20260821 -->
+
 </body></html><style id="linkoSafePatchFinal">
 /* خانة التوصيل تحت بطاقة العضوية */
 #homeDeliveryStatusBox{
@@ -18560,6 +18584,33 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
 
   window.addEventListener('pageshow',refreshMemberOnce);
   window.addEventListener('online',refreshMemberOnce);
+})();
+</script>
+<!-- LINKO_FIRESTORE_READ_OPTIMIZATION_PHASE2_MEMBER_THROTTLE_20260821 -->
+<script id="linkoReadOptimizationPhase2MemberRefreshThrottle">
+(function(){
+  'use strict';
+  if(window.__linkoReadOptimizationPhase2MemberRefreshThrottle) return;
+  window.__linkoReadOptimizationPhase2MemberRefreshThrottle=true;
+  function wrap(name){
+    const original=window[name];
+    if(typeof original!=='function'||original.__linkoReadThrottleV2)return;
+    let lastAt=0,inflight=null;
+    const wrapped=function(force){
+      const now=Date.now();
+      if(force!==true && now-lastAt<30000) return inflight||Promise.resolve();
+      lastAt=now;
+      try{
+        const result=original.apply(this,arguments);
+        inflight=Promise.resolve(result).catch(function(){return undefined;}).finally(function(){inflight=null;});
+        return result;
+      }catch(error){inflight=null;throw error;}
+    };
+    wrapped.__linkoReadThrottleV2=true;
+    window[name]=wrapped;
+  }
+  wrap('refreshMember');
+  wrap('refreshMemberFromFirebase');
 })();
 </script>
 <style id="linkoAuthoritativeCreatedDateV31Style">
