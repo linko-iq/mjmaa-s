@@ -13805,6 +13805,7 @@ body.linko-dark .linko-driver-status-note{
 <!-- LINKO_FIRESTORE_READ_OPTIMIZATION_PHASE1_20260821 -->
 <!-- LINKO_FIRESTORE_READ_OPTIMIZATION_PHASE2_20260821 -->
 
+<!-- LINKO_READ_OPTIMIZATION_PHASE3_TARGETED_MEMBER_LOGIN_20260821 -->
 </body></html><style id="linkoSafePatchFinal">
 /* خانة التوصيل تحت بطاقة العضوية */
 #homeDeliveryStatusBox{
@@ -17663,21 +17664,79 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
     try{
       const f=await firebase();
       try{if(f.auth.currentUser)await f.authModule.signOut(f.auth);}catch(e){}
-      const snapshot=await f.fs.getDocs(f.fs.collection(f.db,'members'));
-      const wantedName=normalizeName(name),wantedCode=clean(code),matches=[];
-      snapshot.forEach(function(doc){
-        const data=doc.data()||{};
-        if(!activeMember(data))return;
+      // READ OPTIMIZATION PHASE 3: never scan the full members collection during login.
+      // 1) Reuse a deterministic login key when available (normally 2 document reads).
+      // 2) For an older member without a key, use small indexed queries and create the key once.
+      const wantedName=normalizeName(name),wantedCode=clean(code);
+      async function digest(value){
+        try{
+          const bytes=new TextEncoder().encode(String(value));
+          const hash=await crypto.subtle.digest('SHA-256',bytes);
+          return Array.from(new Uint8Array(hash),function(b){return b.toString(16).padStart(2,'0')}).join('');
+        }catch(e){
+          let h=2166136261>>>0,s=String(value);for(let i=0;i<s.length;i++){h^=s.charCodeAt(i);h=Math.imul(h,16777619)>>>0;}return h.toString(16).padStart(8,'0');
+        }
+      }
+      async function loginKeyId(){
+        let normalized=clean(name);try{normalized=normalized.normalize('NFKC')}catch(e){}
+        normalized=normalized.replace(/\s+/g,' ').toLowerCase();
+        return await digest('LINKO_MEMBER_LOGIN_V2|'+normalized+'|'+wantedCode);
+      }
+      function matchesCredentials(doc){
+        if(!doc||!doc.exists())return false;
+        const data=doc.data()||{};if(!activeMember(data))return false;
         const names=[data.name,data.username,data.fullName].map(normalizeName).filter(Boolean);
         const codes=[data.code,data.password,data.pin].map(clean).filter(Boolean);
-        if(names.includes(wantedName)&&codes.includes(wantedCode))matches.push(doc);
-      });
-      if(!matches.length)throw new Error('INVALID_LOGIN');
-      matches.sort(function(a,b){
+        return names.includes(wantedName)&&codes.includes(wantedCode);
+      }
+      function newestFirst(a,b){
         const ad=a.data()||{},bd=b.data()||{};
         return Math.max(timeValue(bd.updatedAt),timeValue(bd.approvedAt),timeValue(bd.createdAt))-Math.max(timeValue(ad.updatedAt),timeValue(ad.approvedAt),timeValue(ad.createdAt));
-      });
-      const user=memberFromDoc(matches[0]);
+      }
+      const keyId=await loginKeyId(),keyRef=f.fs.doc(f.db,'memberLoginKeys',keyId);
+      let selected=null;
+      try{
+        const keySnap=await f.fs.getDoc(keyRef);
+        if(keySnap.exists()){
+          const memberId=clean((keySnap.data()||{}).memberId);
+          if(memberId){
+            const memberSnap=await f.fs.getDoc(f.fs.doc(f.db,'members',memberId));
+            if(matchesCredentials(memberSnap))selected=memberSnap;
+          }
+        }
+      }catch(e){console.warn('LINKO login key lookup skipped',e);}
+      if(!selected){
+        const col=f.fs.collection(f.db,'members'),matches=[],seen=new Set();
+        // Exact-name lookup is normally one very small query.
+        for(const field of ['name','username','fullName']){
+          if(matches.length)break;
+          try{
+            const q=f.fs.query(col,f.fs.where(field,'==',name),f.fs.limit(5));
+            const snap=await f.fs.getDocs(q);
+            snap.forEach(function(doc){if(!seen.has(doc.id)&&matchesCredentials(doc)){seen.add(doc.id);matches.push(doc);}});
+          }catch(e){console.warn('LINKO targeted name login query skipped',field,e);}
+        }
+        // Preserve tolerant Arabic-name matching without ever scanning all members:
+        // use the exact secret code as a bounded lookup, then compare the normalized name locally.
+        if(!matches.length){
+          for(const field of ['code','password','pin']){
+            if(matches.length)break;
+            try{
+              const q=f.fs.query(col,f.fs.where(field,'==',wantedCode),f.fs.limit(20));
+              const snap=await f.fs.getDocs(q);
+              snap.forEach(function(doc){if(!seen.has(doc.id)&&matchesCredentials(doc)){seen.add(doc.id);matches.push(doc);}});
+            }catch(e){console.warn('LINKO targeted code login query skipped',field,e);}
+          }
+        }
+        if(matches.length){
+          matches.sort(newestFirst);selected=matches[0];
+          try{
+            await f.fs.setDoc(keyRef,{memberId:selected.id,active:true,version:3,updatedAt:f.fs.serverTimestamp()},{merge:true});
+          }catch(e){console.warn('LINKO login key save skipped',e);}
+        }
+      }
+      if(!selected)throw new Error('INVALID_LOGIN');
+      const user=memberFromDoc(selected);
       saveMember(user);
       syncMember(f,user.firebaseId);
       try{
