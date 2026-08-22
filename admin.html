@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- LINKO MEDINA ADMIN V7.1 FINAL CLEAN ARCHITECTURE - 20260822 -->
 <!--
 LINKO MEDINA - STANDALONE ADMIN V6 - 2026-08-22
 - This file is not embedded in index.html.
@@ -221,9 +222,9 @@ body.theme-dark .admin-req-card,body.theme-dark .admin-member-box,body.theme-dar
 <span><span class="material-symbols-rounded">rocket_launch</span> سرعة المتابعة تعني ثقة أكبر</span>
 </div></div>
 <div class="brand-logo medina-logo logo-intro" aria-label="MEDINA BAZAAR">
-      <img class="logo-full" src="assets/images/asset-002-1e85ec81b9.gif" data-linko-shared-logo="1" alt="MEDINA BAZAAR">
-      <img class="logo-split logo-left" src="assets/images/asset-002-1e85ec81b9.gif" data-linko-shared-logo="1" alt="">
-      <img class="logo-split logo-right" src="assets/images/asset-002-1e85ec81b9.gif" data-linko-shared-logo="1" alt="">
+      <img class="logo-full" src="assets/images/asset-001-e14e9ce273.webp" data-linko-shared-logo="1" alt="MEDINA BAZAAR">
+      <img class="logo-split logo-left" src="assets/images/asset-001-e14e9ce273.webp" data-linko-shared-logo="1" alt="">
+      <img class="logo-split logo-right" src="assets/images/asset-001-e14e9ce273.webp" data-linko-shared-logo="1" alt="">
 </div>
 <h1>لوحة إدارة سوق المدينة الكبير</h1>
 <p>دخول الإدارة للتحكم بالطلبات، الأعضاء، المنتجات، الفروع، الرصيد، والتقارير.</p>
@@ -235,7 +236,7 @@ body.theme-dark .admin-req-card,body.theme-dark .admin-member-box,body.theme-dar
 </section>
 <div class="app" id="app">
 <div class="layout">
-    <aside class="sidebar" id="sidebar"><div class="side-head"><div class="side-logo medina-side-logo"><img src="assets/images/asset-002-1e85ec81b9.gif" data-linko-shared-logo="1" alt="MEDINA BAZAAR"></div><div><h2>MEDINA BAZAAR</h2><small>LINKO Market Admin</small></div></div><nav class="nav" id="nav"></nav></aside>
+    <aside class="sidebar" id="sidebar"><div class="side-head"><div class="side-logo medina-side-logo"><img src="assets/images/asset-001-e14e9ce273.webp" data-linko-shared-logo="1" alt="MEDINA BAZAAR"></div><div><h2>MEDINA BAZAAR</h2><small>LINKO Market Admin</small></div></div><nav class="nav" id="nav"></nav></aside>
 <main class="content">
 <header class="topbar"><div class="motivation-bar" aria-label="شريط تحفيزي للإدارة"><div class="motivation-track">
 <span><span class="material-symbols-rounded">star</span> استمروا في العمل لتحقيق التميز</span>
@@ -244,7 +245,7 @@ body.theme-dark .admin-req-card,body.theme-dark .admin-member-box,body.theme-dar
 <span><span class="material-symbols-rounded">nightlight</span> معاً نحو مستقبل أفضل</span>
 <span><span class="material-symbols-rounded">favorite</span> تنظيمكم يصنع تجربة أفضل للزبائن</span>
 <span><span class="material-symbols-rounded">rocket_launch</span> سرعة المتابعة تعني ثقة أكبر</span>
-    </div></div><div class="top-row"><button class="btn secondary menu-btn" onclick="toggleMenu()"><span class="material-symbols-rounded">menu</span></button><div class="top-brand"><img src="assets/images/asset-002-1e85ec81b9.gif" data-linko-shared-logo="1" alt="MEDINA BAZAAR"><span>MEDINA BAZAAR</span></div><div class="page-title"><h1 id="pageTitle">الرئيسية Dashboard</h1><p id="pageDesc">نظرة سريعة على حالة النظام اليوم.</p></div><div class="top-actions"><button class="theme-toggle" onclick="toggleTheme()" type="button" aria-label="تبديل الوضع"><span class="theme-icon material-symbols-rounded">light_mode</span><span class="theme-label">نهاري</span></button><button class="btn dark" onclick="logoutAdmin()">خروج</button></div></div></header>
+    </div></div><div class="top-row"><button class="btn secondary menu-btn" onclick="toggleMenu()"><span class="material-symbols-rounded">menu</span></button><div class="top-brand"><img src="assets/images/asset-001-e14e9ce273.webp" data-linko-shared-logo="1" alt="MEDINA BAZAAR"><span>MEDINA BAZAAR</span></div><div class="page-title"><h1 id="pageTitle">الرئيسية Dashboard</h1><p id="pageDesc">نظرة سريعة على حالة النظام اليوم.</p></div><div class="top-actions"><button class="theme-toggle" onclick="toggleTheme()" type="button" aria-label="تبديل الوضع"><span class="theme-icon material-symbols-rounded">light_mode</span><span class="theme-label">نهاري</span></button><button class="btn dark" onclick="logoutAdmin()">خروج</button></div></div></header>
 <div class="main" id="main"></div>
 </main>
 </div>
@@ -344,24 +345,18 @@ body.theme-dark .admin-req-card,body.theme-dark .admin-member-box,body.theme-dar
     setStatus:function(id,status){return writeControl('branchControls',id,{status:status==='unavailable'?'unavailable':'available'});},
     setName:function(id,name){name=clean(name);if(!name)throw new Error('EMPTY_NAME');return writeControl('branchControls',id,{name:name});}
   };
-
-  // Compatibility hub for legacy admin modules. It is one-shot and bounded, never realtime.
+  // V7 strict catalog hub: aggregate documents only. It refuses arbitrary collection reads.
   window.__linkoCatalogControlHub={
     subscribe:function(f,name,onNext,onError){
       let cancelled=false;
       (async function(){
         try{
-          if(name==='productControls'||name==='branchControls'){
-            await loadAggregate(name,false);
-            const docs=Object.entries(controls[name]).map(function(pair){return {id:pair[0],data:function(){return Object.assign({},pair[1],name==='productControls'?{productId:pair[0]}:{branchId:pair[0]});}};});
-            if(!cancelled)onNext({docs:docs,forEach:function(fn){docs.forEach(fn);}});return;
-          }
-          const fs=f.fs,db=f.db,col=fs.collection(db,name);
-          let q;
-          if(name==='members') q=fs.query(col,fs.orderBy(fs.documentId(),'desc'),fs.limit(25));
-          else if(name==='memberNotifications') q=fs.query(col,fs.orderBy(fs.documentId(),'desc'),fs.limit(20));
-          else q=fs.query(col,fs.orderBy(fs.documentId(),'desc'),fs.limit(20));
-          const snap=await fs.getDocs(q); if(!cancelled)onNext(snap);
+          if(name!=='productControls'&&name!=='branchControls') throw new Error('V7_COLLECTION_READ_BLOCKED');
+          await loadAggregate(name,false);
+          const docs=Object.entries(controls[name]).map(function(pair){
+            return {id:pair[0],data:function(){return Object.assign({},pair[1],name==='productControls'?{productId:pair[0]}:{branchId:pair[0]});}};
+          });
+          if(!cancelled)onNext({docs:docs,forEach:function(fn){docs.forEach(fn);}});
         }catch(e){if(!cancelled&&onError)onError(e);}
       })();
       return function(){cancelled=true;};
@@ -408,7 +403,7 @@ function officialBranches(){
   {id:'linko',name:'LINKO للتصاميم',icon:'workspace_premium',count:25,order:15,status:'active',area:'',img:''}
  ];
  try{
-  const api=parent.__linkoStage63BranchAvailabilityAPI;
+  const api=window.__linkoStage63BranchAvailabilityAPI;
   const rows=api&&typeof api.list==='function'?api.list():[];
   if(Array.isArray(rows)&&rows.length>=15){
    return rows.slice(0,15).map((b,i)=>({
@@ -428,13 +423,13 @@ function officialBranches(){
 function officialProducts(){
  let rows=[];
  try{
-  const api=parent.__linkoStage6ProductAvailabilityAPI;
+  const api=window.__linkoStage6ProductAvailabilityAPI;
   if(api&&typeof api.list==='function') rows=api.list();
  }catch(e){}
  if(!Array.isArray(rows)||!rows.length){
   try{
-   const parentProducts=Array.isArray(parent.products)?parent.products:[];
-   const parentBranches=Array.isArray(parent.branches)?parent.branches:[];
+   const parentProducts=Array.isArray(window.products)?window.products:[];
+   const parentBranches=Array.isArray(window.branches)?window.branches:[];
    const branchNames=new Map(parentBranches.map(b=>[String(b.id),String(b.name||'')]));
    rows=parentProducts.map(p=>({
     id:String(p.id||''),
@@ -516,10 +511,11 @@ async function loginAdmin(){
  if(btn){btn.disabled=true;btn.innerHTML='جاري التحقق...';}
  try{
   const { initializeApp, getApps } = await import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js');
-  const { getAuth, signInWithEmailAndPassword } = await import('https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js');
+  const { getAuth, signInWithEmailAndPassword, setPersistence, browserLocalPersistence } = await import('https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js');
   const firebaseConfig={apiKey:'AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA',authDomain:'medina-bazaar-e2c18.firebaseapp.com',projectId:'medina-bazaar-e2c18',storageBucket:'medina-bazaar-e2c18.firebasestorage.app',messagingSenderId:'375693456199',appId:'1:375693456199:web:2b36e0368ed898a7a11262'};
   const app=getApps().length?getApps()[0]:initializeApp(firebaseConfig);
   const auth=getAuth(app);
+  await setPersistence(auth,browserLocalPersistence);
   await signInWithEmailAndPassword(auth,email,pass);
   localStorage.setItem('linko_admin_logged_in','1');
   $('loginPage').classList.add('hidden');
@@ -642,7 +638,7 @@ async function saveProduct(id){
  const name=pName.value.trim();
  if(!name){toast('اكتب اسم المنتج');return;}
  try{
-  const api=parent.__linkoStage6ProductAvailabilityAPI;
+  const api=window.__linkoStage6ProductAvailabilityAPI;
   if(!api||typeof api.setName!=='function'||typeof api.setStatus!=='function') throw new Error('PRODUCT_API_NOT_READY');
   if(name!==p.name) await api.setName(String(id),name);
   await api.setStatus(String(id),pStatus.value==='unavailable'?'unavailable':'available');
@@ -660,7 +656,7 @@ async function toggleProduct(id){
  const p=state.products.find(x=>String(x.id)===String(id));
  if(!p){toast('المنتج غير موجود');return;}
  try{
-  const api=parent.__linkoStage6ProductAvailabilityAPI;
+  const api=window.__linkoStage6ProductAvailabilityAPI;
   if(!api||typeof api.setStatus!=='function') throw new Error('PRODUCT_API_NOT_READY');
   await api.setStatus(String(id),p.status==='unavailable'?'available':'unavailable');
   state.products=officialProducts();
@@ -731,7 +727,7 @@ async function saveBranch(id){
   return;
  }
  try{
-  const api=parent.__linkoStage63BranchAvailabilityAPI;
+  const api=window.__linkoStage63BranchAvailabilityAPI;
   if(
    !api||
    typeof api.setName!=='function'||
@@ -942,7 +938,7 @@ initTheme();buildNav();render();
             f.fs.collection(f.db,'subscriptionRequests'),
             f.fs.where('status','==','pending'),
             f.fs.orderBy(f.fs.documentId(),'desc'),
-            f.fs.limit(20)
+            f.fs.limit(8)
           );
           const snap = await f.fs.getDocs(q);
           reqRowsByCol.subscriptionRequests = snap.docs.map(function(d){return normalizeReq(d,'subscriptionRequests');});
@@ -1051,6 +1047,7 @@ initTheme();buildNav();render();
           const f = await fb();
           const reqRef = f.fs.doc(f.db, 'subscriptionRequests', r.firebaseId || r.id);
           const memberId = String(r.firebaseId || r.id || ('member_'+Date.now()));
+          member.firebaseId=memberId; member.memberId=memberId;
           const memRef = f.fs.doc(f.db, MEMBERS_COLLECTION, memberId);
           const batch = f.fs.writeBatch(f.db);
           batch.set(memRef, Object.assign({}, member, {memberId:memberId, updatedAt:f.fs.serverTimestamp(), createdAt:f.fs.serverTimestamp()}), {merge:true});
@@ -1085,16 +1082,8 @@ initTheme();buildNav();render();
           msg('تم رفض الطلب');
         }catch(e){
           console.error(e);
+          localSetReqStatus(id,'pending'); publishRequests(true);
           msg('تعذر رفض الطلب');
-          try{
-            const f=await fb();
-            const q=f.fs.query(f.fs.collection(f.db,'subscriptionRequests'),f.fs.where('status','==','pending'),f.fs.orderBy(f.fs.documentId(),'desc'),f.fs.limit(20));
-            const snap=await f.fs.getDocs(q);
-            reqRowsByCol.subscriptionRequests=snap.docs.map(function(d){
-              return normalizeReq(d,'subscriptionRequests');
-            });
-            publishRequests(true);
-          }catch(_){}
         }finally{
           busy.delete(String(id));
         }
@@ -1116,16 +1105,10 @@ initTheme();buildNav();render();
           msg('تم حذف الطلب');
         }catch(e){
           console.error(e);
+          reqRowsByCol.subscriptionRequests=reqRowsByCol.subscriptionRequests||[];
+          if(!reqRowsByCol.subscriptionRequests.some(function(x){return String(x.id)===String(r.id)}))reqRowsByCol.subscriptionRequests.unshift(r);
+          publishRequests(true);
           msg('تعذر حذف الطلب');
-          try{
-            const f=await fb();
-            const q=f.fs.query(f.fs.collection(f.db,'subscriptionRequests'),f.fs.where('status','==','pending'),f.fs.orderBy(f.fs.documentId(),'desc'),f.fs.limit(20));
-            const snap=await f.fs.getDocs(q);
-            reqRowsByCol.subscriptionRequests=snap.docs.map(function(d){
-              return normalizeReq(d,'subscriptionRequests');
-            });
-            publishRequests(true);
-          }catch(_){}
         }finally{
           busy.delete(String(id));
         }
@@ -1196,406 +1179,37 @@ initTheme();buildNav();render();
     
 })();
 </script>
-<script id="medinaV67DirectNotifications">
-(function(){
-
-      'use strict';
-      if(window.__linkoStage74CompleteNotificationsOnlyFrame) return;
-      window.__linkoStage74CompleteNotificationsOnlyFrame = true;
-
-      const FIREBASE_CONFIG = {
-        apiKey: 'AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA',
-        authDomain: 'medina-bazaar-e2c18.firebaseapp.com',
-        projectId: 'medina-bazaar-e2c18',
-        storageBucket: 'medina-bazaar-e2c18.firebasestorage.app',
-        messagingSenderId: '375693456199',
-        appId: '1:375693456199:web:2b36e0368ed898a7a11262'
-      };
-      const MEMBERS_COLLECTION = 'members';
-      const NOTIFICATIONS_COLLECTION = 'memberNotifications';
-      const CHANGE_COLLECTION = 'memberChangeRequests';
-      let firebasePromise = null;
-      let memberRows = [];
-      let notificationRows = [];
-      let sending = false;
-      const requestBusy = new Set();
-
-      function clean(value){ return String(value == null ? '' : value).trim(); }
-      function esc(value){
-        return String(value == null ? '' : value).replace(/[&<>"']/g,function(ch){
-          return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch];
-        });
-      }
-      function safeId(value){ return clean(value).replace(/[^a-zA-Z0-9_-]/g,'_').slice(0,180); }
-      function message(text){
-        try{ if(typeof toast === 'function') toast(text); else alert(text); }
-        catch(e){ try{ alert(text); }catch(_){} }
-      }
-      function firebase(){
-        if(firebasePromise) return firebasePromise;
-        firebasePromise = Promise.all([
-          import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),
-          import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')
-        ]).then(function(modules){
-          const appModule = modules[0], firestore = modules[1];
-          const app = appModule.getApps().length ? appModule.getApps()[0] : appModule.initializeApp(FIREBASE_CONFIG);
-          return {db:firestore.getFirestore(app), fs:firestore};
-        });
-        return firebasePromise;
-      }
-      function branches(){
-        try{
-          const api = parent.__linkoStage63BranchAvailabilityAPI;
-          if(api && typeof api.list === 'function') return api.list();
-        }catch(e){}
-        try{ return Array.isArray(state.branches) ? state.branches : []; }catch(e){}
-        return [];
-      }
-      function dateText(value){
-        try{ if(value && typeof value.toDate === 'function') return value.toDate().toLocaleString('ar-IQ'); }catch(e){}
-        return clean(value);
-      }
-      function notificationTypeLabel(row){
-        const type = clean(row.targetType || row.type);
-        if(type === 'member') return 'عضو محدد';
-        if(type === 'branch') return 'فرع: ' + clean(row.branchName || row.targetName);
-        if(type === 'all_branches') return 'جميع الفروع';
-        if(type === 'automatic') return 'تلقائي';
-        return 'جميع الأعضاء';
-      }
-      function activeType(){ return clean(window.__linkoStage74NotificationTargetType || 'all_members'); }
-      function targetOptions(type){
-        if(type === 'member'){
-          return memberRows.length ? memberRows.map(function(member){
-            return '<option value="'+esc(member.id)+'">'+esc(member.name || member.phone || 'عضو')+'</option>';
-          }).join('') : '<option value="">لا يوجد أعضاء</option>';
-        }
-        if(type === 'branch'){
-          const rows = branches();
-          return rows.length ? rows.map(function(branch){
-            return '<option value="'+esc(branch.id)+'">'+esc(branch.name || 'فرع')+'</option>';
-          }).join('') : '<option value="">لا توجد فروع</option>';
-        }
-        return '<option value="all">'+(type === 'all_branches' ? 'جميع الفروع' : 'جميع الأعضاء')+'</option>';
-      }
-      function targetLabel(type){
-        if(type === 'member') return 'اختر العضو';
-        if(type === 'branch') return 'اختر الفرع';
-        return 'جهة الإرسال';
-      }
-      function historyHtml(){
-        const rows = notificationRows.slice(0,50);
-        return rows.length ? rows.map(function(row){
-          return '<div class="log"><h3>'+esc(row.title || 'إشعار')+'</h3><p>'+esc(row.text || row.message || '')
-            + '<br><span class="muted">'+esc(notificationTypeLabel(row))+' • '+esc(dateText(row.createdAt) || row.time || '')+'</span></p></div>';
-        }).join('') : '<div class="empty">لا توجد إشعارات مرسلة</div>';
-      }
-
-      window.notifications = function(){
-        const type = activeType();
-        return '<div class="panel"><div class="panel-head"><div><h2>إرسال الإشعارات</h2>'
-          + '<p>اختر جهة الإرسال ثم اكتب رسالة تظهر بشكل أنيق لمدة أربع ثوانٍ.</p></div>'
-          + '<div class="admin-clean-toolbar" style="margin:12px 0">'
-          + '<button class="btn danger mini" type="button" onclick="medinaV68DeleteAllNotifications(this)">حذف جميع الإشعارات</button>'
-          + '</div></div>'
-          + '<div class="form-grid"><div class="field"><label>جهة الإرسال</label>'
-          + '<select id="linkoStage74Type" class="input" onchange="linkoStage74TargetChanged(this.value)">'
-          + '<option value="all_members" '+(type==='all_members'?'selected':'')+'>كل الأعضاء</option>'
-          + '<option value="branch" '+(type==='branch'?'selected':'')+'>فرع معين</option>'
-          + '<option value="member" '+(type==='member'?'selected':'')+'>عضو معين</option>'
-          + '<option value="all_branches" '+(type==='all_branches'?'selected':'')+'>جميع الفروع</option>'
-          + '</select></div>'
-          + '<div class="field" id="linkoStage74TargetBox"><label>التحديد</label>'
-          + '<select id="linkoStage74Target" class="input">'+targetOptions(type)+'</select></div>'
-          + '<div class="field"><label>العنوان</label><input class="input" id="linkoStage74Title" placeholder="مثلاً: إشعار من الإدارة"></div>'
-          + '<div class="field wide"><label>نص الإشعار</label><textarea id="linkoStage74Text" placeholder="اكتب نص الرسالة هنا..."></textarea></div>'
-          + '<button class="btn wide" type="button" onclick="linkoStage74SendNotification(this)"><span class="material-symbols-rounded">send</span> إرسال الإشعار</button>'
-          + '</div></div>'
-          + '<div class="panel"><h2>سجل الإشعارات</h2><div class="timeline">'+historyHtml()+'</div></div>';
-      };
-
-      window.linkoStage74TargetChanged = function(type){
-        window.__linkoStage74NotificationTargetType = clean(type || 'all_members');
-        const box = document.getElementById('linkoStage74TargetBox');
-        if(box) box.innerHTML = '<label>'+esc(targetLabel(type))+'</label><select id="linkoStage74Target" class="input">'+targetOptions(type)+'</select>';
-      };
-
-      window.linkoStage74SendNotification = async function(button){
-        if(sending) return;
-        const type = clean(document.getElementById('linkoStage74Type') && document.getElementById('linkoStage74Type').value) || 'all_members';
-        const targetValue = clean(document.getElementById('linkoStage74Target') && document.getElementById('linkoStage74Target').value) || 'all';
-        const title = clean(document.getElementById('linkoStage74Title') && document.getElementById('linkoStage74Title').value);
-        const text = clean(document.getElementById('linkoStage74Text') && document.getElementById('linkoStage74Text').value);
-        if(!title || !text){ message('أكمل عنوان الإشعار ونصه'); return; }
-        if((type === 'member' || type === 'branch') && !targetValue){ message('اختر جهة الإرسال'); return; }
-
-        let targetName = 'جميع الأعضاء', branchName = '', targetMemberName = '', targetMemberCode = '';
-        if(type === 'member'){
-          const member = memberRows.find(function(row){ return clean(row.id) === targetValue; });
-          if(!member){ message('العضو غير متوفر'); return; }
-          targetName = member.name || 'عضو محدد';
-          targetMemberName = member.name || '';
-          targetMemberCode = member.code || '';
-        }else if(type === 'branch'){
-          const branch = branches().find(function(row){ return clean(row.id) === targetValue; });
-          if(!branch){ message('الفرع غير متوفر'); return; }
-          branchName = branch.name || 'فرع';
-          targetName = branchName;
-        }else if(type === 'all_branches'){
-          targetName = 'جميع الفروع';
-        }
-
-        sending = true;
-        const oldText = button ? button.innerHTML : '';
-        if(button){ button.disabled = true; button.textContent = 'جاري الإرسال...'; }
-        try{
-          const f = await firebase();
-          const token = 'manual_' + Date.now() + '_' + Math.random().toString(36).slice(2,9);
-          await f.fs.setDoc(f.fs.doc(f.db, NOTIFICATIONS_COLLECTION, token), {
-            stage74:true,
-            source:'manual',
-            targetType:type,
-            targetValue:targetValue,
-            target:type === 'member' ? 'member' : 'all',
-            targetName:targetName,
-            targetMemberName:targetMemberName,
-            targetMemberCode:targetMemberCode,
-            branchId:type === 'branch' ? targetValue : '',
-            branchName:branchName,
-            title:title,
-            text:text,
-            message:text,
-            kind:'info',
-            status:'unread',
-            clientCreatedAtMs:Date.now(),
-            createdAt:f.fs.serverTimestamp()
-          });
-          const titleInput = document.getElementById('linkoStage74Title');
-          const textInput = document.getElementById('linkoStage74Text');
-          if(titleInput) titleInput.value = '';
-          if(textInput) textInput.value = '';
-          message('تم إرسال الإشعار');
-        }catch(error){
-          console.error('LINKO 7.4 manual notification failed',error);
-          message('تعذر إرسال الإشعار');
-        }finally{
-          sending = false;
-          if(button){ button.disabled = false; button.innerHTML = oldText; }
-        }
-      };
-
-
-      window.medinaV68DeleteAllNotifications = function(){ message('تم تعطيل الحذف الشامل من المتصفح لحماية حصة القراءة. احذف الإشعارات على دفعات محددة عند الحاجة.'); };
-
-      async function writeAutomaticNotification(key,payload){
-        const f = await firebase();
-        await f.fs.setDoc(f.fs.doc(f.db, NOTIFICATIONS_COLLECTION, safeId(key)), Object.assign({
-          stage74:true,
-          source:'automatic',
-          targetType:'member',
-          target:'member',
-          kind:'ok',
-          status:'unread',
-          clientCreatedAtMs:Date.now(),
-          createdAt:f.fs.serverTimestamp()
-        },payload), {merge:true});
-      }
-
-      function updatePayload(request){
-        const field = clean(request.field), value = request.newValue;
-        if(field === 'name') return {name:String(value),username:String(value),fullName:String(value)};
-        if(field === 'phone') return {phone:String(value)};
-        if(field === 'address') return {area:String(value),address:String(value)};
-        if(field === 'password') return {code:String(value),password:String(value)};
-        if(field === 'balance') return {balance:Number(value || 0)};
-        return {};
-      }
-      async function findMemberRef(f,request){
-        const id = clean(request.memberId);
-        if(id) return f.fs.doc(f.db,MEMBERS_COLLECTION,id);
-        const name=clean(request.memberName), code=clean(request.memberCode);
-        if(!name || !code) return null;
-        const q=f.fs.query(
-          f.fs.collection(f.db,MEMBERS_COLLECTION),
-          f.fs.where('name','==',name),
-          f.fs.where('code','==',code),
-          f.fs.limit(1)
-        );
-        const snap=await f.fs.getDocs(q);
-        return snap.empty ? null : snap.docs[0].ref;
-      }
-      async function handleRequest(id,approved){
-        id = clean(id);
-        if(!id || requestBusy.has(id)) return;
-        requestBusy.add(id);
-        try{
-          const f = await firebase();
-          const requestRef = f.fs.doc(f.db,CHANGE_COLLECTION,id);
-          const requestSnap = await f.fs.getDoc(requestRef);
-          if(!requestSnap.exists()){ message('لم يتم العثور على الطلب'); return; }
-          const request = Object.assign({id:id},requestSnap.data() || {});
-          if(clean(request.status) !== 'pending'){ message('تم التعامل مع هذا الطلب سابقًا'); return; }
-          if(approved){
-            const memberRef = await findMemberRef(f,request);
-            if(!memberRef){ message('لم يتم العثور على العضو'); return; }
-            const payload = updatePayload(request);
-            payload.updatedAt = f.fs.serverTimestamp();
-            await f.fs.updateDoc(memberRef,payload);
-            await f.fs.updateDoc(requestRef,{status:'approved',approvedAt:f.fs.serverTimestamp()});
-          }else{
-            await f.fs.updateDoc(requestRef,{status:'rejected',rejectedAt:f.fs.serverTimestamp()});
-          }
-          await writeAutomaticNotification('request_'+id+'_'+(approved?'approved':'rejected'),{
-            targetValue:clean(request.memberId),
-            targetMemberName:clean(request.memberName),
-            targetMemberCode:clean(request.memberCode),
-            title:approved ? 'تم قبول طلبك' : 'تم رفض طلبك',
-            text:(approved ? 'تم قبول ' : 'تم رفض ') + clean(request.type || request.title || 'طلب تعديل البيانات'),
-            requestId:id,
-            kind:approved ? 'ok' : 'pending'
-          });
-          message(approved ? 'تمت الموافقة وتحديث بيانات العضو' : 'تم رفض الطلب');
-        }catch(error){
-          console.error('LINKO 7.4 request notification failed',error);
-          message(approved ? 'تعذر تنفيذ الموافقة' : 'تعذر رفض الطلب');
-        }finally{
-          requestBusy.delete(id);
-        }
-      }
-      function applyRequestHandlers(){
-        window.approveAdminRequest = function(id){ return handleRequest(id,true); };
-        window.rejectAdminRequest = function(id){ return handleRequest(id,false); };
-      }
-
-      function wrapChargeHandler(){
-        const current = window.linkoStage73ChargeOrder;
-        if(typeof current !== 'function' || current.__linkoStage74Wrapped) return;
-        const original = current;
-        const wrapped = async function(orderDocumentId,domId,button){
-          const orderId = clean(orderDocumentId);
-          const result = await original.apply(this,arguments);
-          try{
-            const f = await firebase();
-            const orderSnap = await f.fs.getDoc(f.fs.doc(f.db,'orders',orderId));
-            if(orderSnap.exists()){
-              const order = orderSnap.data() || {};
-              if(order.balanceDeducted === true || order.paymentDeducted === true){
-                const amount = Number(order.finalAmount || order.deductedAmount || 0);
-                const after = Number(order.balanceAfter || 0);
-                await writeAutomaticNotification('order_charge_'+orderId,{
-                  targetValue:clean(order.memberId),
-                  targetMemberName:clean(order.memberName),
-                  targetMemberCode:clean(order.memberCode),
-                  title:'تم اعتماد مبلغ طلبك',
-                  text:'تم اعتماد مبلغ الطلب '+amount.toLocaleString('ar-IQ')+' د.ع وخصمه من رصيدك. الرصيد المتبقي '+after.toLocaleString('ar-IQ')+' د.ع',
-                  orderId:orderId,
-                  kind:'ok'
-                });
-              }
-            }
-          }catch(error){ console.warn('LINKO 7.4 charge notification skipped',error); }
-          return result;
-        };
-        wrapped.__linkoStage74Wrapped = true;
-        window.linkoStage73ChargeOrder = wrapped;
-      }
-
-      function safeRender(){
-        try{
-          const focused = document.activeElement;
-          if(focused && ['INPUT','TEXTAREA','SELECT'].includes(focused.tagName)) return;
-          if(typeof active !== 'undefined' && active === 'notifications' && typeof render === 'function') render();
-        }catch(e){}
-      }
-      async function start(){
-        try{
-          const f = await firebase();
-          parent.__linkoCatalogControlHub.subscribe(f,MEMBERS_COLLECTION,function(snapshot){
-            memberRows = snapshot.docs.map(function(doc){
-              const data = doc.data() || {};
-              return {id:doc.id,name:clean(data.name || data.username || data.fullName),phone:clean(data.phone),code:clean(data.code || data.password || data.pin)};
-            }).filter(function(row){ return !!row.name; });
-            safeRender();
-          });
-          parent.__linkoCatalogControlHub.subscribe(f,NOTIFICATIONS_COLLECTION,function(snapshot){
-            notificationRows = snapshot.docs.map(function(doc){ return Object.assign({id:doc.id},doc.data() || {}); })
-              .sort(function(a,b){
-                const at = Number(a.clientCreatedAtMs || (a.createdAt && a.createdAt.seconds*1000) || 0);
-                const bt = Number(b.clientCreatedAtMs || (b.createdAt && b.createdAt.seconds*1000) || 0);
-                return bt-at;
-              });
-            safeRender();
-          });
-        }catch(error){ console.warn('LINKO 7.4 admin listeners failed',error); }
-      }
-
-      applyRequestHandlers();
-      wrapChargeHandler();
-      const previousOpenSecNotifications=window.openSec;
-      if(typeof previousOpenSecNotifications==='function') window.openSec=function(id){
-        const result=previousOpenSecNotifications.apply(this,arguments);
-        if(id==='notifications') start();
-        return result;
-      };
-      /* MEDINA V67: no periodic wrapper polling. */
-    
-})();
-</script>
-<script id="medinaV67DirectMemberSearch">
-
+<script id="linkoAdminNotificationsV7">
 (function(){
   'use strict';
-
-  if(window.__medinaV67StableMemberSearch) return;
-  window.__medinaV67StableMemberSearch = true;
-
-  function normalize(value){
-    return String(value == null ? '' : value)
-      .trim()
-      .toLocaleLowerCase('ar')
-      .replace(/[أإآ]/g,'ا')
-      .replace(/\s+/g,' ');
+  if(window.__linkoAdminNotificationsV7)return;
+  window.__linkoAdminNotificationsV7=true;
+  const CFG={apiKey:'AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA',authDomain:'medina-bazaar-e2c18.firebaseapp.com',projectId:'medina-bazaar-e2c18',storageBucket:'medina-bazaar-e2c18.firebasestorage.app',messagingSenderId:'375693456199',appId:'1:375693456199:web:2b36e0368ed898a7a11262'};
+  const MEMBERS='members', NOTES='memberNotifications';
+  let fbPromise=null,historyRows=[],historyLoaded=false,selectedMember=null,sending=false,searching=false;
+  function clean(v){return String(v==null?'':v).trim()}
+  function esc(v){return clean(v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
+  function msg(v){try{if(typeof toast==='function')toast(v);else alert(v)}catch(e){}}
+  async function fb(){if(fbPromise)return fbPromise;fbPromise=Promise.all([import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')]).then(function(m){const app=m[0].getApps().length?m[0].getApps()[0]:m[0].initializeApp(CFG);return{db:m[1].getFirestore(app),fs:m[1]}});return fbPromise}
+  function branchRows(){try{const api=window.__linkoStage63BranchAvailabilityAPI;if(api&&typeof api.list==='function')return api.list()}catch(e){}try{return Array.isArray(state.branches)?state.branches:[]}catch(e){return[]}}
+  function type(){return clean(window.__linkoV7NoteType||'all_members')}
+  function dateText(v){try{if(v&&typeof v.toDate==='function')return v.toDate().toLocaleString('ar-IQ')}catch(e){}return clean(v)}
+  function typeLabel(r){const t=clean(r.targetType||r.type);if(t==='member')return 'عضو: '+clean(r.targetName||r.targetMemberName||r.memberName);if(t==='branch')return 'فرع: '+clean(r.branchName||r.targetName);if(t==='all_branches')return 'جميع الفروع';return 'جميع الأعضاء'}
+  function historyHtml(){return historyRows.length?historyRows.slice(0,4).map(function(r){return '<div class="log"><h3>'+esc(r.title||'إشعار')+'</h3><p>'+esc(r.text||r.message||'')+'<br><span class="muted">'+esc(typeLabel(r))+' • '+esc(dateText(r.createdAt)||r.time||'')+'</span></p></div>'}).join(''):'<div class="empty">لا توجد إشعارات محملة</div>'}
+  function targetHtml(t){
+    if(t==='branch')return '<label>اختر الفرع</label><select id="linkoV7NoteTarget" class="input">'+branchRows().map(function(b){return '<option value="'+esc(b.id)+'">'+esc(b.name)+'</option>'}).join('')+'</select>';
+    if(t==='member')return '<label>عضو محدد</label><div style="display:grid;grid-template-columns:1fr auto;gap:8px"><input id="linkoV7MemberSearch" class="input" placeholder="الاسم أو الهاتف أو الرمز"><button class="btn secondary" type="button" onclick="linkoV7FindMemberForNote(this)">بحث</button></div><small id="linkoV7MemberPicked" class="muted" style="display:block;margin-top:7px">'+(selectedMember?'تم اختيار: '+esc(selectedMember.name||selectedMember.phone||selectedMember.id):'لم يتم اختيار عضو بعد')+'</small>';
+    return '<label>جهة الإرسال</label><input class="input" value="'+(t==='all_branches'?'جميع الفروع':'جميع الأعضاء')+'" disabled>';
   }
-
-  function filter(value){
-    const query = normalize(value);
-    document.querySelectorAll('.members-admin-grid .admin-member-box')
-      .forEach(function(card){
-        card.style.display =
-          !query || normalize(card.textContent).includes(query)
-            ? ''
-            : 'none';
-      });
-  }
-
-  document.addEventListener('input',function(event){
-    const input = event.target;
-    if(!input || input.id !== 'memSearch') return;
-
-    event.stopImmediatePropagation();
-    input.removeAttribute('oninput');
-    filter(input.value);
-  },true);
-
-  document.addEventListener('click',function(event){
-    const button = event.target && event.target.closest
-      ? event.target.closest('button')
-      : null;
-
-    if(!button || String(button.textContent || '').trim() !== 'بحث') return;
-
-    const tools = button.closest('.tools');
-    const input = tools && tools.querySelector('#memSearch');
-    if(!input) return;
-
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    button.removeAttribute('onclick');
-    filter(input.value);
-    input.focus();
-  },true);
+  window.notifications=function(){const t=type();return '<div class="panel"><div class="panel-head"><div><h2>إرسال الإشعارات</h2><p>لا توجد قراءة للأعضاء تلقائياً. بحث العضو المحدد يتم عند الطلب فقط.</p></div><button class="btn secondary mini" type="button" onclick="linkoV7RefreshNoteHistory(this)">تحديث السجل</button></div><div class="form-grid"><div class="field"><label>جهة الإرسال</label><select id="linkoV7NoteType" class="input" onchange="linkoV7NoteTargetChanged(this.value)"><option value="all_members" '+(t==='all_members'?'selected':'')+'>كل الأعضاء</option><option value="branch" '+(t==='branch'?'selected':'')+'>فرع معين</option><option value="member" '+(t==='member'?'selected':'')+'>عضو معين</option><option value="all_branches" '+(t==='all_branches'?'selected':'')+'>جميع الفروع</option></select></div><div class="field" id="linkoV7TargetBox">'+targetHtml(t)+'</div><div class="field"><label>العنوان</label><input class="input" id="linkoV7NoteTitle" placeholder="مثلاً: إشعار من الإدارة"></div><div class="field wide"><label>نص الإشعار</label><textarea id="linkoV7NoteText" placeholder="اكتب نص الرسالة هنا..."></textarea></div><button class="btn wide" type="button" onclick="linkoV7SendNote(this)"><span class="material-symbols-rounded">send</span> إرسال الإشعار</button></div></div><div class="panel"><h2>آخر 4 إشعارات فقط</h2><div class="timeline">'+historyHtml()+'</div></div>'};
+  window.linkoV7NoteTargetChanged=function(v){window.__linkoV7NoteType=clean(v)||'all_members';selectedMember=null;const box=document.getElementById('linkoV7TargetBox');if(box)box.innerHTML=targetHtml(type())};
+  window.linkoV7FindMemberForNote=async function(btn){if(searching)return;const q=clean(document.getElementById('linkoV7MemberSearch')?.value);if(!q){msg('اكتب اسم العضو أو الهاتف أو الرمز');return}searching=true;const old=btn&&btn.textContent;if(btn){btn.disabled=true;btn.textContent='جاري...'}try{const f=await fb();let field='name';if(/^07\d{8,}$/.test(q.replace(/\s+/g,'')))field='phone';else if(/^\d{4,}$/.test(q))field='code';const query=f.fs.query(f.fs.collection(f.db,MEMBERS),f.fs.where(field,'==',q),f.fs.limit(1));const snap=await f.fs.getDocs(query);if(snap.empty){selectedMember=null;msg('لم يتم العثور على العضو');}else{const d=snap.docs[0],x=d.data()||{};selectedMember={id:d.id,name:clean(x.name||x.username||x.fullName),phone:clean(x.phone),code:clean(x.code||x.password)};msg('تم اختيار العضو');}const label=document.getElementById('linkoV7MemberPicked');if(label)label.textContent=selectedMember?'تم اختيار: '+(selectedMember.name||selectedMember.phone||selectedMember.id):'لم يتم اختيار عضو بعد'}catch(e){console.error(e);msg('تعذر البحث عن العضو')}finally{searching=false;if(btn){btn.disabled=false;btn.textContent=old||'بحث'}}};
+  async function loadHistory(force){if(historyLoaded&&!force)return;try{const f=await fb();const q=f.fs.query(f.fs.collection(f.db,NOTES),f.fs.orderBy(f.fs.documentId(),'desc'),f.fs.limit(4));const snap=await f.fs.getDocs(q);historyRows=snap.docs.map(function(d){return Object.assign({id:d.id},d.data()||{})});historyLoaded=true;if(typeof active!=='undefined'&&active==='notifications'&&typeof render==='function')render()}catch(e){console.warn('V7 notification history load failed',e)}}
+  window.linkoV7RefreshNoteHistory=function(btn){historyLoaded=false;const old=btn&&btn.textContent;if(btn){btn.disabled=true;btn.textContent='جاري...'}Promise.resolve(loadHistory(true)).finally(function(){if(btn){btn.disabled=false;btn.textContent=old||'تحديث السجل'}})};
+  window.linkoV7SendNote=async function(btn){if(sending)return;const t=clean(document.getElementById('linkoV7NoteType')?.value)||'all_members',title=clean(document.getElementById('linkoV7NoteTitle')?.value),text=clean(document.getElementById('linkoV7NoteText')?.value);if(!title||!text){msg('أكمل العنوان والنص');return}let targetValue='all',targetName=t==='all_branches'?'جميع الفروع':'جميع الأعضاء',branchName='';if(t==='member'){if(!selectedMember){msg('ابحث عن العضو وحدده أولاً');return}targetValue=selectedMember.id;targetName=selectedMember.name||selectedMember.phone||'عضو'}else if(t==='branch'){targetValue=clean(document.getElementById('linkoV7NoteTarget')?.value);const b=branchRows().find(function(x){return clean(x.id)===targetValue});if(!b){msg('اختر الفرع');return}targetName=branchName=clean(b.name)}sending=true;const old=btn&&btn.innerHTML;if(btn){btn.disabled=true;btn.textContent='جاري الإرسال...'}try{const f=await fb(),id='manual_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),payload={source:'manual_admin_v7',targetType:t,target:t==='member'?'member':'all',targetValue:targetValue,targetName:targetName,branchId:t==='branch'?targetValue:'',branchName:branchName,memberName:t==='member'?targetName:'',title:title,text:text,message:text,kind:'info',status:'unread',clientCreatedAtMs:Date.now(),createdAt:f.fs.serverTimestamp()};await f.fs.setDoc(f.fs.doc(f.db,NOTES,id),payload);historyRows.unshift(Object.assign({id:id,time:new Date().toLocaleString('ar-IQ')},payload));historyRows=historyRows.slice(0,4);document.getElementById('linkoV7NoteTitle').value='';document.getElementById('linkoV7NoteText').value='';msg('تم إرسال الإشعار');if(typeof render==='function')render()}catch(e){console.error(e);msg('تعذر إرسال الإشعار')}finally{sending=false;if(btn&&document.body.contains(btn)){btn.disabled=false;btn.innerHTML=old||'إرسال الإشعار'}}};
+  window.medinaV68DeleteAllNotifications=function(){msg('الحذف الشامل معطل لحماية حصة القراءة')};
+  const prev=window.openSec;if(typeof prev==='function')window.openSec=function(id){const r=prev.apply(this,arguments);if(id==='notifications')loadHistory(false);return r};
 })();
-
 </script>
 
 <script id="medinaV68DirectMembers">
@@ -1797,19 +1411,12 @@ initTheme();buildNav();render();
 
     return firebasePromise;
   }
-
   async function resolveDocId(member){
-    const direct=clean(member&&(member.firebaseId||member.firestoreId||member.docId));
+    const direct=clean(member&&(member.firebaseId||member.firestoreId||member.docId||member.memberId));
     if(direct) return direct;
     const fallbackId=clean(member&&member.id);
     if(fallbackId && !/^\d+$/.test(fallbackId)) return fallbackId;
-    const name=clean(member&&(member.name||member.username));
-    const code=clean(member&&(member.code||member.password));
-    if(!name||!code) return '';
-    const f=await firebase();
-    const q=f.fs.query(f.fs.collection(f.db,MEMBERS_COLLECTION),f.fs.where('name','==',name),f.fs.where('code','==',code),f.fs.limit(1));
-    const snap=await f.fs.getDocs(q);
-    return snap.empty?'':snap.docs[0].id;
+    return '';
   }
 
   async function updateMember(member,payload){
@@ -2260,7 +1867,7 @@ initTheme();buildNav();render();
     if(unsubscribe && !force) return;
     try{
       const f=await firebase();
-      const q=f.fs.query(f.fs.collection(f.db,MEMBERS_COLLECTION),f.fs.orderBy(f.fs.documentId(),'desc'),f.fs.limit(25));
+      const q=f.fs.query(f.fs.collection(f.db,MEMBERS_COLLECTION),f.fs.orderBy(f.fs.documentId(),'desc'),f.fs.limit(10));
       const snapshot=await f.fs.getDocs(q);
       liveRows=snapshot.docs.map(normalizeMember).filter(function(member){return !member.deleted;});
       publish(false);
@@ -2274,55 +1881,33 @@ initTheme();buildNav();render();
 })();
 </script>
 
-<script id="linkoAdminChangeRequestsV6">
+<script id="linkoAdminChangeRequestsV7">
 (function(){
-      if(window.__linkoPhase5AdminDataRequestsCleanPath) return;
-      window.__linkoPhase5AdminDataRequestsCleanPath = true;
-      const FIREBASE_CONFIG = {
-        apiKey: "AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA",
-        authDomain: "medina-bazaar-e2c18.firebaseapp.com",
-        projectId: "medina-bazaar-e2c18",
-        storageBucket: "medina-bazaar-e2c18.firebasestorage.app",
-        messagingSenderId: "375693456199",
-        appId: "1:375693456199:web:2b36e0368ed898a7a11262"
-      };
-      const CHANGE_COLLECTION = 'memberChangeRequests';
-      const MEMBERS_COLLECTION = 'members';
-      const NOTIFICATIONS_COLLECTION = 'memberNotifications';
-      let fbPromise = null, rows = [], started = false, busy = new Set();
-      function clean(v){ return String(v == null ? '' : v).trim(); }
-      function esc(v){ return String(v == null ? '' : v).replace(/[&<>"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];}); }
-      function msg(v){ try{ if(typeof toast==='function') toast(v); else console.log(v); }catch(e){} }
-      function dateText(v){ try{ if(v && typeof v.toDate==='function') return v.toDate().toLocaleString('ar-IQ'); }catch(e){} return ''; }
-      function st(){ try{return state;}catch(e){window.state=window.state||{};return window.state;} }
-      function forceRender(){ try{ if(typeof buildNav==='function') buildNav(); }catch(e){} try{ if(typeof render==='function') render(); }catch(e){} }
-      async function fb(){ if(fbPromise) return fbPromise; fbPromise = Promise.all([import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'), import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')]).then(function(mods){ const appMod=mods[0], fs=mods[1]; const app=appMod.getApps().length?appMod.getApps()[0]:appMod.initializeApp(FIREBASE_CONFIG); return {db:fs.getFirestore(app), fs:fs}; }); return fbPromise; }
-      function norm(doc){ const d=doc.data()||{}; return {id:doc.id,firebaseId:doc.id,type:d.type||d.title||'طلب تعديل',field:d.field||'',fieldLabel:d.fieldLabel||'',oldValue:d.oldValue,newValue:d.newValue,details:d.details||d.newValue||'',memberId:d.memberId||'',memberName:d.memberName||'',memberCode:d.memberCode||'',memberPhone:d.memberPhone||'',status:d.status||'pending',date:d.date||dateText(d.createdAt)||dateText(d.updatedAt)||'',raw:d}; }
-      function publish(){ rows = rows.filter(function(r){return r.status==='pending';}); st().adminMessages = rows.map(function(r){ return {id:r.id, firebaseId:r.firebaseId, type:'data_change_request', title:r.type, details:String(r.details||r.newValue||''), memberId:r.memberId, memberName:r.memberName, memberCode:r.memberCode, time:r.date, status:r.status, raw:r}; }); forceRender(); }
-      function card(r){
-        const oldVal = r.oldValue == null ? '' : String(r.oldValue);
-        const newVal = r.newValue == null ? '' : String(r.newValue);
-        return '<div class="admin-request unread"><div class="req-top"><h3>'+esc(r.type)+' <span class="status wait">بانتظار</span></h3><small class="muted">'+esc(r.date)+'</small></div><p><b>العضو:</b> '+esc(r.memberName||'-')+'</p><p><b>البيانات القديمة:</b> '+esc(oldVal||'-')+'<br><b>البيانات الجديدة:</b> '+esc(newVal||r.details||'-')+'</p><div class="actions-row"><button class="btn mini" data-phase5-action="approve" data-id="'+esc(r.id)+'">موافقة التعديل</button><button class="btn warn mini" data-phase5-action="reject" data-id="'+esc(r.id)+'">رفض التعديل</button></div></div>';
-      }
-      window.requestsInbox = function(){ const qEl=document.getElementById('adminChangeSearch'); const q=qEl?qEl.value:''; const list=rows.filter(function(r){return r.status==='pending' && (!q || [r.type,r.memberName,r.memberPhone,r.details,r.newValue].join(' ').includes(q));}); return '<div class="panel"><div class="panel-head"><div><h2>استلام طلبات التعديل</h2><p>طلبات تعديل بيانات الأعضاء من صفحة حسابي، والموافقة تحدث العضو مباشرة.</p></div></div><div class="tools"><input class="input" id="adminChangeSearch" oninput="render()" value="'+esc(q)+'" placeholder="بحث بالعضو أو نوع الطلب"><button class="btn secondary" data-phase5-action="refresh">تحديث</button></div><div class="cards">'+(list.length?list.map(card).join(''):'<div class="empty">لا توجد طلبات تعديل حالياً</div>')+'</div></div>'; };
-      async function findMemberRef(f, r){ if(r.memberId) return f.fs.doc(f.db, MEMBERS_COLLECTION, r.memberId); const name=clean(r.memberName), code=clean(r.memberCode); if(name&&code){ const q=f.fs.query(f.fs.collection(f.db,MEMBERS_COLLECTION), f.fs.where('name','==',name), f.fs.where('code','==',code), f.fs.limit(1)); const snap=await f.fs.getDocs(q); if(!snap.empty) return snap.docs[0].ref; } return null; }
-      function updatePayload(r){ const field=clean(r.field); const val=r.newValue; if(field==='name') return {name:String(val), username:String(val), fullName:String(val)}; if(field==='phone') return {phone:String(val)}; if(field==='address') return {area:String(val), address:String(val)}; if(field==='password') return {code:String(val), password:String(val)}; if(field==='balance') return {balance:Number(val||0)}; return {}; }
-      async function notifyMember(f, r, approved){ await f.fs.addDoc(f.fs.collection(f.db, NOTIFICATIONS_COLLECTION), {targetType:'member',target:'member',targetValue:r.memberId||'',memberId:r.memberId||'', memberName:r.memberName||'', memberCode:r.memberCode||'', title: approved?'تم قبول طلبك':'تم رفض طلبك', text: approved?('تم قبول '+(r.type||'طلب التعديل')):('تم رفض '+(r.type||'طلب التعديل')), requestId:r.id, status:'unread', kind:approved?'ok':'pending',clientCreatedAtMs:Date.now(), createdAt:f.fs.serverTimestamp()}); }
-      window.approveAdminRequest = async function(id){ if(busy.has(String(id))) return; busy.add(String(id)); try{ const r=rows.find(x=>String(x.id)===String(id)); if(!r){msg('لم يتم العثور على الطلب');return;} const f=await fb(); const memRef=await findMemberRef(f,r); if(!memRef){msg('لم يتم العثور على العضو');return;} const payload=updatePayload(r); payload.updatedAt=f.fs.serverTimestamp(); await f.fs.updateDoc(memRef,payload); await f.fs.updateDoc(f.fs.doc(f.db,CHANGE_COLLECTION,r.id),{status:'approved',approvedAt:f.fs.serverTimestamp()}); await notifyMember(f,r,true); msg('تمت الموافقة وتحديث بيانات العضو'); }catch(e){console.error(e); msg('تعذر تنفيذ الموافقة');} finally{busy.delete(String(id));} };
-      window.rejectAdminRequest = async function(id){ if(busy.has(String(id))) return; busy.add(String(id)); try{ const r=rows.find(x=>String(x.id)===String(id)); if(!r){msg('لم يتم العثور على الطلب');return;} const f=await fb(); await f.fs.updateDoc(f.fs.doc(f.db,CHANGE_COLLECTION,r.id),{status:'rejected',rejectedAt:f.fs.serverTimestamp()}); await notifyMember(f,r,false); msg('تم رفض الطلب'); }catch(e){console.error(e); msg('تعذر رفض الطلب');} finally{busy.delete(String(id));} };
-      async function start(force){ if(started&&!force){publish();return;} started=true; try{ const f=await fb(); const q=f.fs.query(f.fs.collection(f.db,CHANGE_COLLECTION),f.fs.where('status','==','pending'),f.fs.orderBy(f.fs.documentId(),'desc'),f.fs.limit(20)); const snap=await f.fs.getDocs(q); rows=snap.docs.map(norm); publish(); }catch(e){ console.warn('change requests bounded load failed',e); msg('تعذر قراءة طلبات التعديل'); } }
-      document.addEventListener('click',function(e){ const btn=e.target.closest('[data-phase5-action]'); if(!btn) return; e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); const action=btn.getAttribute('data-phase5-action'), id=btn.getAttribute('data-id'); const old=btn.innerHTML; if(action==='approve'||action==='reject'){btn.disabled=true;btn.innerHTML='<span class="material-symbols-rounded">sync</span> جاري...';} const done=function(){setTimeout(function(){try{btn.disabled=false;btn.innerHTML=old;}catch(e){}},300);}; if(action==='approve') Promise.resolve(window.approveAdminRequest(id)).finally(done); else if(action==='reject') Promise.resolve(window.rejectAdminRequest(id)).finally(done); else if(action==='refresh'){Promise.resolve(start(true)).finally(function(){publish();msg('تم التحديث');});} }, true);
-      window.linkoPhase5Refresh = function(){ return start(true); };
-      const previousOpenSecRequests=window.openSec;
-      if(typeof previousOpenSecRequests==='function') window.openSec=function(id){
-        const result=previousOpenSecRequests.apply(this,arguments);
-        if(id==='requests') start(false);
-        return result;
-      };
-    })();
-
+  'use strict';
+  if(window.__linkoAdminChangeRequestsV7)return;
+  window.__linkoAdminChangeRequestsV7=true;
+  const CFG={apiKey:'AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA',authDomain:'medina-bazaar-e2c18.firebaseapp.com',projectId:'medina-bazaar-e2c18',storageBucket:'medina-bazaar-e2c18.firebasestorage.app',messagingSenderId:'375693456199',appId:'1:375693456199:web:2b36e0368ed898a7a11262'};
+  const REQUESTS='memberChangeRequests',MEMBERS='members',NOTES='memberNotifications';
+  let fbPromise=null,rows=[],loaded=false;const busy=new Set();
+  function clean(v){return String(v==null?'':v).trim()}
+  function esc(v){return clean(v).replace(/[&<>"']/g,function(ch){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]})}
+  function msg(v){try{if(typeof toast==='function')toast(v);else alert(v)}catch(e){}}
+  async function fb(){if(fbPromise)return fbPromise;fbPromise=Promise.all([import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),import('https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js')]).then(function(m){const app=m[0].getApps().length?m[0].getApps()[0]:m[0].initializeApp(CFG);return{db:m[1].getFirestore(app),fs:m[1]}});return fbPromise}
+  function dateText(v){try{if(v&&typeof v.toDate==='function')return v.toDate().toLocaleString('ar-IQ')}catch(e){}return clean(v)}
+  function norm(d){const x=d.data()||{};return{id:d.id,type:x.type||x.title||'طلب تعديل',field:clean(x.field),oldValue:x.oldValue,newValue:x.newValue,details:x.details||x.newValue||'',memberId:clean(x.memberId),memberName:clean(x.memberName),memberCode:clean(x.memberCode),memberPhone:clean(x.memberPhone),status:clean(x.status||'pending'),date:clean(x.date)||dateText(x.createdAt),raw:x}}
+  function publish(){try{if(window.state)window.state.adminMessages=rows.filter(function(r){return r.status==='pending'}).map(function(r){return{id:r.id,firebaseId:r.id,type:'data_change_request',title:r.type,details:String(r.details||r.newValue||''),memberId:r.memberId,memberName:r.memberName,memberCode:r.memberCode,time:r.date,status:r.status,raw:r}})}catch(e){}if(typeof active!=='undefined'&&active==='requests'&&typeof render==='function')render()}
+  function card(r){return '<div class="admin-request unread"><div class="req-top"><h3>'+esc(r.type)+' <span class="status wait">بانتظار</span></h3><small class="muted">'+esc(r.date)+'</small></div><p><b>العضو:</b> '+esc(r.memberName||'-')+'</p><p><b>البيانات القديمة:</b> '+esc(r.oldValue==null?'-':r.oldValue)+'<br><b>البيانات الجديدة:</b> '+esc(r.newValue==null?(r.details||'-'):r.newValue)+'</p><div class="actions-row"><button class="btn mini" data-v7-change="approve" data-id="'+esc(r.id)+'">موافقة التعديل</button><button class="btn warn mini" data-v7-change="reject" data-id="'+esc(r.id)+'">رفض التعديل</button></div></div>'}
+  window.requestsInbox=function(){const q=clean(document.getElementById('adminChangeSearch')?.value);const list=rows.filter(function(r){return r.status==='pending'&&(!q||[r.type,r.memberName,r.memberPhone,r.details,r.newValue].join(' ').includes(q))});return '<div class="panel"><div class="panel-head"><div><h2>استلام طلبات التعديل</h2><p>تُحمّل آخر 8 طلبات معلقة فقط عند فتح هذا القسم.</p></div><button class="btn secondary mini" data-v7-change="refresh">تحديث</button></div><div class="tools"><input class="input" id="adminChangeSearch" oninput="render()" value="'+esc(q)+'" placeholder="بحث بالعضو أو نوع الطلب"></div><div class="cards">'+(list.length?list.map(card).join(''):'<div class="empty">لا توجد طلبات تعديل حالياً</div>')+'</div></div>'};
+  function payload(r){const v=r.newValue;if(r.field==='name')return{name:String(v),username:String(v),fullName:String(v)};if(r.field==='phone')return{phone:String(v)};if(r.field==='address')return{area:String(v),address:String(v)};if(r.field==='password')return{code:String(v),password:String(v)};if(r.field==='balance')return{balance:Number(v||0)};return{}}
+  async function resolveMemberRef(f,r){return r.memberId?f.fs.doc(f.db,MEMBERS,r.memberId):null}
+  async function act(id,approved){if(busy.has(id))return;const r=rows.find(function(x){return String(x.id)===String(id)});if(!r){msg('الطلب غير موجود');return}busy.add(id);try{const f=await fb(),batch=f.fs.writeBatch(f.db),reqRef=f.fs.doc(f.db,REQUESTS,id);if(approved){const memberRef=await resolveMemberRef(f,r);if(!memberRef){msg('تعذر تحديد العضو لهذا الطلب القديم');return}batch.update(memberRef,Object.assign(payload(r),{updatedAt:f.fs.serverTimestamp()}))}batch.update(reqRef,approved?{status:'approved',approvedAt:f.fs.serverTimestamp()}:{status:'rejected',rejectedAt:f.fs.serverTimestamp()});const noteRef=f.fs.doc(f.db,NOTES,'change_'+id+'_'+(approved?'approved':'rejected'));batch.set(noteRef,{source:'admin_change_v7',targetType:'member',target:'member',targetValue:r.memberId||'',memberName:r.memberName||'',title:approved?'تم قبول طلبك':'تم رفض طلبك',text:(approved?'تم قبول ':'تم رفض ')+(r.type||'طلب التعديل'),requestId:id,status:'unread',kind:approved?'ok':'pending',clientCreatedAtMs:Date.now(),createdAt:f.fs.serverTimestamp()},{merge:true});await batch.commit();rows=rows.filter(function(x){return String(x.id)!==String(id)});publish();msg(approved?'تمت الموافقة وتحديث العضو':'تم رفض الطلب')}catch(e){console.error(e);msg('تعذر تنفيذ العملية')}finally{busy.delete(id)}}
+  async function load(force){if(loaded&&!force){publish();return}try{const f=await fb(),q=f.fs.query(f.fs.collection(f.db,REQUESTS),f.fs.where('status','==','pending'),f.fs.orderBy(f.fs.documentId(),'desc'),f.fs.limit(8)),snap=await f.fs.getDocs(q);rows=snap.docs.map(norm);loaded=true;publish()}catch(e){console.warn('V7 change request load failed',e);msg('تعذر قراءة طلبات التعديل')}}
+  document.addEventListener('click',function(e){const b=e.target.closest('[data-v7-change]');if(!b)return;e.preventDefault();e.stopPropagation();const a=b.getAttribute('data-v7-change'),id=b.getAttribute('data-id')||'';if(a==='approve'||a==='reject'){const old=b.textContent;b.disabled=true;b.textContent='جاري...';Promise.resolve(act(id,a==='approve')).finally(function(){if(document.body.contains(b)){b.disabled=false;b.textContent=old}})}else if(a==='refresh'){loaded=false;load(true)}},true);
+  window.approveAdminRequest=function(id){return act(String(id),true)};window.rejectAdminRequest=function(id){return act(String(id),false)};
+  const prev=window.openSec;if(typeof prev==='function')window.openSec=function(id){const r=prev.apply(this,arguments);if(id==='requests')load(false);return r};
+})();
 </script>
-<script id="linkoAdminDriversV6">
+<script id="linkoAdminDriversV7">
 
 (function(){
   'use strict';
@@ -2332,7 +1917,7 @@ initTheme();buildNav();render();
   const CFG={"apiKey":"AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA","authDomain":"medina-bazaar-e2c18.firebaseapp.com","projectId":"medina-bazaar-e2c18","storageBucket":"medina-bazaar-e2c18.firebasestorage.app","messagingSenderId":"375693456199","appId":"1:375693456199:web:2b36e0368ed898a7a11262"};
   const REQUESTS='driverRequests';
   const DRIVERS='drivers';
-  let fbPromise=null,reqRows=[],driverRows=[],orderRows=[],reqUnsub=null,driverUnsub=null,ordersUnsub=null,driverAdminTab='applications';
+  let fbPromise=null,reqRows=[],driverRows=[],orderRows=[],reportLoaded=false,driverAdminTab='applications';
   const busy=new Set();
 
   function esc(v){
@@ -2609,7 +2194,7 @@ initTheme();buildNav();render();
 
   document.addEventListener('click',function(e){
     const tab=e.target.closest('[data-driver-admin-tab]');
-    if(tab){e.preventDefault();e.stopPropagation();driverAdminTab=tab.getAttribute('data-driver-admin-tab')||'applications';renderDriverSection();return;}
+    if(tab){e.preventDefault();e.stopPropagation();driverAdminTab=tab.getAttribute('data-driver-admin-tab')||'applications';if(driverAdminTab==='reports')loadReports(false);else renderDriverSection();return;}
     const btn=e.target.closest('[data-driver-admin-action]');
     if(!btn)return;
     e.preventDefault();e.stopPropagation();
@@ -2627,19 +2212,26 @@ initTheme();buildNav();render();
     else if(action==='toggle')toggleDriver(id,btn.getAttribute('data-next')||'stopped');
     else if(action==='refresh'){start(true);msg('تم تحديث بيانات المندوبين');}
   },true);
-
   function norm(doc){return Object.assign({id:doc.id},doc.data()||{})}
+  async function loadReports(force){
+    if(reportLoaded&&!force){renderDriverSection();return;}
+    try{
+      const f=await fb();
+      const weekStart=f.fs.Timestamp.fromMillis(Date.now()-7*24*60*60*1000);
+      const q=f.fs.query(f.fs.collection(f.db,'orders'),f.fs.where('deliveredAt','>=',weekStart),f.fs.limit(5));
+      const snap=await f.fs.getDocs(q);
+      orderRows=snap.docs.map(norm);reportLoaded=true;renderDriverSection();
+    }catch(e){console.warn('driver reports bounded load failed',e);renderDriverSection();}
+  }
   async function start(force){
     try{
       const f=await fb();
-      const requestQuery=f.fs.query(f.fs.collection(f.db,REQUESTS),f.fs.orderBy(f.fs.documentId(),'desc'),f.fs.limit(10));
-      const driverQuery=f.fs.query(f.fs.collection(f.db,DRIVERS),f.fs.orderBy(f.fs.documentId(),'desc'),f.fs.limit(20));
-      const weekStart=f.fs.Timestamp.fromMillis(Date.now()-7*24*60*60*1000);
-      const orderQuery=f.fs.query(f.fs.collection(f.db,'orders'),f.fs.where('deliveredAt','>=',weekStart),f.fs.limit(20));
-      const results=await Promise.all([f.fs.getDocs(requestQuery),f.fs.getDocs(driverQuery),f.fs.getDocs(orderQuery)]);
+      const requestQuery=f.fs.query(f.fs.collection(f.db,REQUESTS),f.fs.orderBy(f.fs.documentId(),'desc'),f.fs.limit(5));
+      const driverQuery=f.fs.query(f.fs.collection(f.db,DRIVERS),f.fs.orderBy(f.fs.documentId(),'desc'),f.fs.limit(8));
+      const results=await Promise.all([f.fs.getDocs(requestQuery),f.fs.getDocs(driverQuery)]);
       reqRows=results[0].docs.map(norm).sort(function(a,b){return Number(b.clientCreatedAtMs||0)-Number(a.clientCreatedAtMs||0);});
       driverRows=results[1].docs.map(norm);
-      orderRows=results[2].docs.map(norm);
+      if(force){reportLoaded=false;orderRows=[];}
       appendNav();
       try{if(typeof active!=='undefined'&&active==='drivers')renderDriverSection();}catch(e){}
     }catch(e){console.warn('driver admin bounded refresh failed',e);}
@@ -2699,16 +2291,20 @@ initTheme();buildNav();render();
       state.products=officialProducts();closeModal();toast('تم حفظ تعديل المنتج');render();
     }catch(e){console.error(e);toast('تعذر حفظ المنتج');}
   };
-
-  // Admin has its own direct URL. This link exists only inside admin, never inside member index.
-  document.addEventListener('DOMContentLoaded',function(){
-    const card=document.querySelector('.login-card');
-    if(card&&!document.getElementById('linkoAdminBackToMembers')){
-      const a=document.createElement('a');a.id='linkoAdminBackToMembers';a.href='index.html';a.className='btn secondary full';a.style.marginTop='10px';a.textContent='رجوع إلى موقع الأعضاء';card.appendChild(a);
-    }
-  },{once:true});
 })();
 
+</script>
+<script id="linkoAdminPersistentSessionV7">
+(function(){
+  'use strict';
+  if(window.__linkoAdminPersistentSessionV7)return;
+  window.__linkoAdminPersistentSessionV7=true;
+  const CFG={apiKey:'AIzaSyC01S-7aVAi4N-kpRWne1kQbc1W8jSngnA',authDomain:'medina-bazaar-e2c18.firebaseapp.com',projectId:'medina-bazaar-e2c18',storageBucket:'medina-bazaar-e2c18.firebasestorage.app',messagingSenderId:'375693456199',appId:'1:375693456199:web:2b36e0368ed898a7a11262'};
+  function showApp(){const login=document.getElementById('loginPage'),app=document.getElementById('app');if(login)login.classList.add('hidden');if(app)app.classList.add('show');try{localStorage.setItem('linko_admin_logged_in','1')}catch(e){}try{if(typeof render==='function')render()}catch(e){}}
+  function showLogin(){const login=document.getElementById('loginPage'),app=document.getElementById('app');if(app)app.classList.remove('show');if(login)login.classList.remove('hidden')}
+  async function restore(){try{const appMod=await import('https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js'),authMod=await import('https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js'),app=appMod.getApps().length?appMod.getApps()[0]:appMod.initializeApp(CFG),auth=authMod.getAuth(app);await authMod.setPersistence(auth,authMod.browserLocalPersistence);await new Promise(function(resolve){let stop=function(){};stop=authMod.onAuthStateChanged(auth,function(user){try{stop()}catch(e){}if(user)showApp();else{try{localStorage.removeItem('linko_admin_logged_in')}catch(e){}showLogin()}resolve()},function(){showLogin();resolve()})})}catch(e){console.warn('ADMIN SESSION RESTORE',e);showLogin()}}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',restore,{once:true});else restore();
+})();
 </script>
 </body>
 </html>
