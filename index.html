@@ -7118,6 +7118,10 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
 
   let firebaseReady = null;
   let sending = false;
+  function __linkoWeekStart(base=new Date()){const d=new Date(base),back=(d.getDay()+1)%7;d.setHours(0,0,0,0);d.setDate(d.getDate()-back);return d;}
+  function __linkoDateKey(d){const p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;}
+  function __linkoWeekKey(base=new Date()){return __linkoDateKey(__linkoWeekStart(base));}
+  function __linkoWeeklyMeta(f,base=new Date()){const start=__linkoWeekStart(base),end=new Date(start);end.setDate(end.getDate()+7);return{weekKey:__linkoWeekKey(base),weekStart:__linkoDateKey(start),weekEnd:__linkoDateKey(new Date(end.getTime()-1)),updatedAt:f.fs.serverTimestamp()};}
 
   const clean = value => String(value == null ? '' : value).trim();
 
@@ -7389,7 +7393,8 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
         createdAtText:nowText,
         clientCreatedAtMs:Date.now(),
         createdAt:f.fs.serverTimestamp(),
-        source:'member_order'
+        source:'member_order',
+        reportWeekKey:__linkoWeekKey()
       };
 
       // RADICAL READ ARCHITECTURE: one atomic write path; never recount historical orders.
@@ -7401,6 +7406,15 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
         orderCount:f.fs.increment(1),
         updatedAt:f.fs.serverTimestamp()
       });
+      batch.set(
+        f.fs.doc(f.db,'weeklyReports',payload.reportWeekKey),
+        Object.assign(__linkoWeeklyMeta(f),{
+          totalOrders:f.fs.increment(1),
+          pendingOrders:f.fs.increment(1),
+          totalAmount:f.fs.increment(subtotal)
+        }),
+        {merge:true}
+      );
       await batch.commit();
 
       const updatedMember = Object.assign({}, member, memberData, {
