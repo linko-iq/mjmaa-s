@@ -250,7 +250,12 @@ const DRIVER_REQUESTS="driverRequests";
 const DRIVERS="drivers";
 const ORDERS="orders";
 const MEMBER_NOTIFICATIONS="memberNotifications";
+const WEEKLY_REPORTS="weeklyReports";
 const SESSION_KEY="medina_driver_session_v1";
+function weekStart(base=new Date()){const d=new Date(base),back=(d.getDay()+1)%7;d.setHours(0,0,0,0);d.setDate(d.getDate()-back);return d}
+function dateKey(d){const p=n=>String(n).padStart(2,"0");return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`}
+function weekKey(base=new Date()){return dateKey(weekStart(base))}
+function orderWeekKey(o){if(o&&clean(o.reportWeekKey))return clean(o.reportWeekKey);if(o&&Number(o.clientCreatedAtMs))return weekKey(new Date(Number(o.clientCreatedAtMs)));return weekKey()}
 
 const $=s=>document.querySelector(s);
 const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
@@ -737,6 +742,15 @@ async function setOrderStatus(id,status){
           deliveryStateVersion:2,
           updatedAt:fb.fs.serverTimestamp()
         });
+        tx.set(
+          fb.fs.doc(fb.db,WEEKLY_REPORTS,orderWeekKey(o)),
+          {
+            deliveredOrders:fb.fs.increment(1),
+            pendingOrders:fb.fs.increment(-1),
+            updatedAt:fb.fs.serverTimestamp()
+          },
+          {merge:true}
+        );
         driver={...driver,deliveredCount:deliveredCount};
       }
     });
