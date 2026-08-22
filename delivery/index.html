@@ -622,7 +622,7 @@ async function startListeners(){
   stopCurrentOrderWatch();
   availableOrdersMap.clear();currentOrder=null;recentDone=doneFromDriver(driver);render();
 
-  // One realtime query only: newest 3 pending orders.
+  // V7: one realtime query only: newest 3 pending orders.
   const availableQuery=fb.fs.query(
     fb.fs.collection(fb.db,ORDERS),
     fb.fs.where("status","==","pending"),
