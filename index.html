@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- LINKO RADICAL PHYSICAL READ CLEANUP V3 - 20260822 -->
 <!-- LINKO RADICAL FINAL: ZERO BACKGROUND MEMBER READS 20260821 -->
 <!-- LINKO_RADICAL_READ_AUDIT_CLEAN_PHASE2_20260821: ROOT READS REMOVED, LAZY MEMBER DATA -->
 
@@ -7690,6 +7691,7 @@ if(form) form.reset();
   const CHANGE_COLLECTION = 'memberChangeRequests';
   let fbPromise=null;
   let memberRequestRows=[];
+  let memberRequestsLoadedFor='';
 
   function clean(v){ return String(v==null?'':v).trim(); }
   function esc(v){ return String(v==null?'':v).replace(/[&<>"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];}); }
@@ -7725,11 +7727,13 @@ if(form) form.reset();
     try{
       const f=await fb();
       const id=clean(u.firebaseId||u.memberId||u.docId);
-      if(!id){memberRequestRows=[];renderMemberRequestsClean();return;}
+      if(!id){memberRequestRows=[];memberRequestsLoadedFor='';renderMemberRequestsClean();return;}
+      if(memberRequestsLoadedFor===id){renderMemberRequestsClean();return;}
       const q=f.fs.query(f.fs.collection(f.db,CHANGE_COLLECTION),f.fs.where('memberId','==',id),f.fs.limit(3));
       const snap=await f.fs.getDocs(q);
       memberRequestRows=[];
       snap.forEach(function(doc){const d=doc.data()||{};if(requestMatchesUser(d,u))memberRequestRows.push({id:doc.id,type:d.type||d.title,details:d.details||d.newValue,status:d.status||'pending',date:d.date||toDateText(d.createdAt)||toDateText(d.updatedAt)})});
+      memberRequestsLoadedFor=id;
       renderMemberRequestsClean();
     }catch(e){console.warn('member requests load failed',e);renderMemberRequestsClean();}
   }
@@ -7738,7 +7742,7 @@ if(form) form.reset();
   const oldGo=window.go;
   window.go=function(id){ const r=oldGo&&oldGo.apply(this,arguments); if(id==='profilePage')setTimeout(function(){startMemberRequests();renderMemberRequestsClean();},80); return r; };
   const oldLogout=window.logout;
-  if(typeof oldLogout==='function') window.logout=function(){memberRequestRows=[];return oldLogout.apply(this,arguments);};
+  if(typeof oldLogout==='function') window.logout=function(){memberRequestRows=[];memberRequestsLoadedFor='';return oldLogout.apply(this,arguments);};
 
   // تنظيف إدارة الأعضاء داخل iframe: مصدر الأعضاء Firebase فقط، بدون دمج state.members القديم الذي يسبب التكرار.
   function adminPatch(){ return '('+function(){
@@ -16006,9 +16010,9 @@ body.linko-dark #linkoStage74MemberNotificationPopup small{color:#fde68a!importa
       const memberRef = await resolveMemberRef(f, member);
       if(!memberRef) throw new Error('member-not-found');
 
-      const memberSnap = await f.fs.getDoc(memberRef);
-      if(!memberSnap.exists()) throw new Error('member-not-found');
-      const memberData = memberSnap.data() || {};
+      // PHYSICAL READ CLEANUP V3: no pre-read of the member document here.
+      // The logged-in member snapshot is already held locally; batch.update below fails atomically if the member doc no longer exists.
+      const memberData = Object.assign({}, member);
       const memberStatus = clean(memberData.status).toLowerCase();
       if(memberData.deleted === true || ['deleted','removed','stopped','inactive','blocked','rejected','موقوف','محذوف','مرفوض'].includes(memberStatus)) throw new Error('member-inactive');
 
